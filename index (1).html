@@ -1,0 +1,969 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pintland Isles: The Rotted Soul's Labyrinth</title>
+<style>
+  html,body{margin:0;padding:0;background:#08070a;height:100%;overflow:hidden}
+  #wrap{display:flex;align-items:center;justify-content:center;height:100%}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;background:#08070a}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<script>
+'use strict';
+/* ============================================================
+   PINTLAND ISLES: THE ROTTED SOUL'S LABYRINTH
+   A tiny isometric dungeon crawler set beneath the Hoegaarden
+   Library, in the prison-maze of the Rotten King of Lagendale.
+   Based on the Master Lore Compendium of the Liquor Kings.
+   ============================================================ */
+
+// ---------- low-res pixel canvas ----------
+const VW = 480, VH = 300;
+const cv = document.getElementById('game');
+cv.width = VW; cv.height = VH;
+const cx = cv.getContext('2d');
+cx.imageSmoothingEnabled = false;
+function fit(){
+  const s = Math.max(1, Math.floor(Math.min(innerWidth/VW, innerHeight/VH)));
+  cv.style.width = (VW*s)+'px'; cv.style.height = (VH*s)+'px';
+}
+addEventListener('resize', fit); fit();
+
+// ---------- iso constants ----------
+const TW = 32, TH = 16, WALLH = 22;
+const CXO = VW/2, CYO = VH/2 - 10;
+
+// ---------- tiny audio ----------
+let AC = null, muted = false;
+function ac(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function tone(f, dur, type, vol, slide){
+  if(muted) return; const a = ac(); if(!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type||'square'; o.frequency.value = f;
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(20,f+slide), a.currentTime+dur);
+  g.gain.setValueAtTime(vol||.08, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(.0001, a.currentTime+dur);
+  o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur);
+}
+const SFX = {
+  swing(){ tone(220,.08,'square',.05,-120); },
+  hit(){ tone(160,.12,'sawtooth',.08,-80); },
+  hurt(){ tone(110,.25,'sawtooth',.1,-60); },
+  pickup(){ tone(660,.07,'square',.06,300); tone(880,.09,'square',.05,200); },
+  gold(){ tone(988,.06,'square',.05,150); },
+  ale(){ tone(392,.1,'triangle',.09,80); tone(523,.12,'triangle',.08,100); },
+  book(){ tone(294,.2,'triangle',.07,-40); },
+  stairs(){ tone(196,.3,'triangle',.09,-90); tone(147,.4,'triangle',.08,-60); },
+  die(){ tone(196,.5,'sawtooth',.1,-150); },
+  roar(){ tone(65,.6,'sawtooth',.13,-20); tone(98,.5,'square',.07,-40); },
+  win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.25,'square',.08),i*140)); }
+};
+
+// ---------- input ----------
+const keys = {};
+addEventListener('keydown', e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  keys[e.key.toLowerCase()] = true;
+  if(e.key.toLowerCase()==='m'){ muted=!muted; }
+  onPress(e.key.toLowerCase());
+});
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+cv.addEventListener('mousedown', ()=>{ ac(); onPress('mouse'); });
+
+// ---------- sprites (pixel maps) ----------
+function bake(rows, pal, scale){
+  scale = scale||1;
+  const h = rows.length, w = rows[0].length;
+  const c = document.createElement('canvas'); c.width = w*scale; c.height = h*scale;
+  const g = c.getContext('2d');
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const ch = rows[y][x]; if(ch==='.'||!pal[ch]) continue;
+    g.fillStyle = pal[ch]; g.fillRect(x*scale,y*scale,scale,scale);
+  }
+  return c;
+}
+function flip(img){
+  const c = document.createElement('canvas'); c.width=img.width; c.height=img.height;
+  const g = c.getContext('2d'); g.translate(img.width,0); g.scale(-1,1); g.drawImage(img,0,0);
+  return c;
+}
+
+const KING_ROWS = [
+  '.G.G.G.G..',
+  '.GGGGGGG..',
+  '.HHHHHHH..',
+  '.HSSSSSH..',
+  '.HSdSdSH..',
+  '.HhSSShH..',
+  '..hhhhh...',
+  '.CCCCCCC..',
+  'SCCCcCCCS.',
+  'SCCCCCCCS.',
+  '.CCCCCCC..',
+  '.bbbbbbb..',
+  '.KK...KK..',
+  '.KK...KK..'
+];
+// per-king palettes + stats
+const KINGS = [
+  { name:'Seamus Bonehardy', tag:'"King of Kegs" — sitting Mayor of Aleforge',
+    perk:'Balanced. Memorized the prison layout (so he claims).',
+    hp:12, spd:4.2, dmg:3, light:5, coat:'#2e7d32', hair:'#6d4c2f', skin:'#e8b98a' },
+  { name:'Jack Anqoak', tag:'"Oracle of Aleforge" — CEO, Goldcoral Inc.',
+    perk:'Lost his soul down here once. Sees far in the dark.',
+    hp:8, spd:4.2, dmg:3, light:7.5, coat:'#6a1fa0', hair:'#1c1c22', skin:'#d9cfc4' },
+  { name:'Jagerbauhm', tag:'"Drunken Angel" — closed the Nether portal',
+    perk:'Fast on his feet. Functional alcoholic since sixteen.',
+    hp:10, spd:5.3, dmg:3, light:5, coat:'#b03a2e', hair:'#d9b44a', skin:'#e8b98a' },
+  { name:"Guinnie O'Guinness", tag:'Deserter, bouncer, street reaper of Owe Block',
+    perk:'Hits like Wagwan’s Whopper. Never forgets a face.',
+    hp:10, spd:4.2, dmg:5, light:5, coat:'#37474f', hair:'#c05621', skin:'#e8b98a' },
+  { name:'Buke', tag:'No middle name, no last name. Raised on brew.',
+    perk:'Bones grown strong on vitamin alcohol. Very tough, a bit slow.',
+    hp:16, spd:3.6, dmg:3, light:5, coat:'#1e5aa8', hair:'#3e2c1c', skin:'#e8b98a' },
+  { name:'Jameson Pilsner', tag:'Captain of the Coors Golden Isles',
+    perk:'Dies constantly. The ale brings him back — once.',
+    hp:8, spd:4.2, dmg:3, light:5, coat:'#c07f28', hair:'#26211c', skin:'#e8b98a' },
+];
+KINGS.forEach(k=>{
+  const pal = { G:'#f4c430', H:k.hair, h:k.hair, S:k.skin, d:'#1a1a1a',
+                C:k.coat, c:'#f4c430', b:'#4a3320', K:'#2a2a30' };
+  k.img = bake(KING_ROWS, pal);
+  k.imgF = flip(k.img);
+});
+
+const HUSK = bake([
+  '..........',
+  '..ZZZZZ...',
+  '.ZZZZZZZ..',
+  '.ZEZZEZZ..',
+  '.ZZZZZZZ..',
+  '..ZZZZZ...',
+  '.ZZZZZZZ..',
+  'zZZRZZZZz.',
+  'zZZZZRZZz.',
+  '.ZZZZZZZ..',
+  '.ZZ..ZZZ..',
+  '.ZZ...ZZ..',
+  '.z.....z..',
+], { Z:'#7d8471', z:'#5a6152', E:'#9fff5a', R:'#4c7031' });
+const HUSK_F = flip(HUSK);
+
+const WISP = bake([
+  '..WW....',
+  '.WwwW...',
+  'WwEwEW..',
+  'WwwwwW..',
+  '.WwwW...',
+  '..W.W...',
+], { W:'#57a05a', w:'#8fd08f', E:'#eaffea' });
+const WISP_F = flip(WISP);
+
+const BOSS = bake([
+  '..B.B..B.B..',
+  '..BBBBBBBB..',
+  '...RRRRRR...',
+  '..RRERRERR..',
+  '...RRRRRR...',
+  '....RrrR....',
+  '..RRRRRRRR..',
+  '.RRRRrRRRRR.',
+  'RRsRRRRRRsRR',
+  'RRsRRrrRRsRR',
+  'RRRRRRRRRRRR',
+  '.RRRrRRrRRR.',
+  '.RRRRRRRRRR.',
+  '..RRRRRRRR..',
+  '..RRR..RRR..',
+  '..RR....RR..',
+  '..rr....rr..',
+], { B:'#e8e0c8', R:'#3a2f3d', r:'#5c4a63', E:'#9fff5a', s:'#e8e0c8' }, 2);
+const BOSS_F = flip(BOSS);
+
+const TANKARD = bake([
+  '.FFFF...',
+  'FFFFFF..',
+  'MMMMM.M.',
+  'MmMMM.M.',
+  'MmMMM.M.',
+  'MMMMM.M.',
+  'MMMMMMM.',
+  '.MMMM...',
+], { F:'#f5f0dc', M:'#8a5a2b', m:'#a8713a' });
+
+const BOOK = bake([
+  'PPPPPPP.',
+  'PppppppP',
+  'PpGpppgP',
+  'PpppppgP',
+  'PPPPPPP.',
+], { P:'#5a3a22', p:'#caa96e', G:'#f4c430', g:'#8a6a3a' });
+
+const COIN = bake([
+  '.GG.',
+  'GggG',
+  'GggG',
+  '.GG.',
+], { G:'#c79b18', g:'#f4c430' });
+
+const URN = bake([
+  '..UU..',
+  '.UuuU.',
+  'UuuuuU',
+  'UuEuuU',
+  '.UuuU.',
+  '..UU..',
+], { U:'#7a7f8a', u:'#a8adb8', E:'#9fff5a' });
+
+// ---------- lore books ----------
+const LORE = [
+  {t:'A CARVED WARNING', b:'"These stones were laid by hands now returned to the earth. They will stand when your bones have long since followed. Enter as one who understands this, or do not enter at all."'},
+  {t:'BOOK OF THE ASHEN FIELDS', b:'"The air curdles in the breath of the cursed night. The ground is turned to ash, never to live again. And the very warmth of the sun betrays us as we perish in agony."'},
+  {t:'BOOK OF THE 138', b:'"One Hundred and Thirty Eight — the guidance of nations, the arbiters of justice... flesh turned to that of the dead, and with it the crumbling of a nation."'},
+  {t:'A CHILD’S LULLABY', b:'"King of Nothing, King of Bone. Walks in the field and walks alone. Touch the dirt and watch it turn, kiss the flames, adore the burns." — She said everyone knows that song. You had not heard it before today.'},
+  {t:'A FARMER’S LAMENT', b:'"My father’s fields, black before harvest, black before frost. He burns his book of prayer, and buries his faith in the dirt. The amber fires of Scoul have died out."'},
+  {t:'THE BETRAYAL BENEATH', b:'800 volunteers spent 400 days building this labyrinth. When the King was sealed, the militia turned on them all to feed the binding magic. The corridors you walk are their grave.'},
+  {t:'OF THE GUARDIAN', b:'One unnamed slave was sealed in with the tomb, wrapped in every protection spell the mages had. His spirit still walks these halls — the last hope of Lagendale, should the Rotted Soul ever stir.'},
+  {t:'ON VEILRUNNERS', b:'A VeilRunner is a Veilwalker turned against the earth it was born to protect. Where Walkers channel growth, a Runner channels rot — a decay that unravels all living things if left unchecked.'},
+  {t:'THE DREAMLESS KING', b:'"My daughter asks me, why does the king not sleep? I had not the heart to tell her. It has taken even our very dreams away. Those who sleep now bargain their soul."'},
+];
+
+// ---------- maze / floor generation ----------
+function rngShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+const FLOORS = [
+  { name:'DEPTH I — THE LAGENDALE CATACOMBS', size:25, husks:8, wisps:4, ale:3, gold:10, rot:5 },
+  { name:'DEPTH II — THE RIVER COFFIN',       size:29, husks:11, wisps:7, ale:3, gold:12, rot:9 },
+  { name:'DEPTH III — SEPULCHER OF THE ROTTEN KING', size:23, boss:true, husks:3, wisps:3, ale:2, gold:4, rot:6 },
+];
+
+let map, N, floorNo, entities, pickups, projectiles, particles, decals, stairs, bossRef;
+let loreDeck = [];
+
+function solidAt(x,y){
+  if(x<0||y<0||x>=N||y>=N) return true;
+  return map[y][x]===1;
+}
+
+function genFloor(f){
+  const F = FLOORS[f];
+  N = F.size;
+  map = Array.from({length:N},()=>Array(N).fill(1));
+  entities = []; pickups = []; projectiles = []; particles = []; decals = [];
+  stairs = null; bossRef = null;
+
+  if(F.boss){
+    // open arena with pillars
+    for(let y=2;y<N-2;y++) for(let x=2;x<N-2;x++) map[y][x]=0;
+    [[6,6],[6,N-8],[N-8,6],[N-8,N-8]].forEach(([px,py])=>{
+      for(let y=py;y<py+2;y++) for(let x=px;x<px+2;x++) map[y][x]=1;
+    });
+    player.x = N/2; player.y = N-4;
+    // boss
+    const b = mkEnemy('boss', N/2, 6.5);
+    entities.push(b); bossRef = b;
+    for(let i=0;i<F.husks;i++) entities.push(mkEnemy('husk', 4+((Math.random()*(N-8))|0), 4+((Math.random()*(N-12))|0)));
+    for(let i=0;i<F.wisps;i++) entities.push(mkEnemy('wisp', 4+((Math.random()*(N-8))|0), 4+((Math.random()*(N-12))|0)));
+    scatter(F);
+    return;
+  }
+
+  // recursive backtracker maze
+  const stack=[[1,1]]; map[1][1]=0;
+  while(stack.length){
+    const [cxx,cyy] = stack[stack.length-1];
+    const dirs = rngShuffle([[2,0],[-2,0],[0,2],[0,-2]]);
+    let carved=false;
+    for(const [dx,dy] of dirs){
+      const nx=cxx+dx, ny=cyy+dy;
+      if(nx>0&&ny>0&&nx<N-1&&ny<N-1&&map[ny][nx]===1){
+        map[cyy+dy/2][cxx+dx/2]=0; map[ny][nx]=0;
+        stack.push([nx,ny]); carved=true; break;
+      }
+    }
+    if(!carved) stack.pop();
+  }
+  // open a few rooms
+  for(let r=0;r<4+f;r++){
+    const rw=3+2*((Math.random()*2)|0), rh=3+2*((Math.random()*2)|0);
+    const rx=1+2*((Math.random()*((N-rw-2)/2))|0), ry=1+2*((Math.random()*((N-rh-2)/2))|0);
+    for(let y=ry;y<ry+rh&&y<N-1;y++) for(let x=rx;x<rx+rw&&x<N-1;x++) map[y][x]=0;
+  }
+  player.x = 1.5; player.y = 1.5;
+
+  // BFS distances from start for stairs placement
+  const dist = Array.from({length:N},()=>Array(N).fill(-1));
+  const q=[[1,1]]; dist[1][1]=0;
+  while(q.length){
+    const [qx,qy]=q.shift();
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+      const nx=qx+dx, ny=qy+dy;
+      if(nx>=0&&ny>=0&&nx<N&&ny<N&&map[ny][nx]===0&&dist[ny][nx]<0){
+        dist[ny][nx]=dist[qy][qx]+1; q.push([nx,ny]);
+      }
+    });
+  }
+  let best=[1,1], bd=0;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++) if(dist[y][x]>bd){ bd=dist[y][x]; best=[x,y]; }
+  stairs = { x:best[0], y:best[1] };
+
+  // spawn cells (open, not too close to start)
+  const cells=[];
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++)
+    if(map[y][x]===0 && dist[y][x]>6 && !(x===stairs.x&&y===stairs.y)) cells.push([x,y]);
+  rngShuffle(cells);
+  let ci=0; const take=()=>cells[ci++ % cells.length];
+
+  for(let i=0;i<F.husks;i++){ const [x,y]=take(); entities.push(mkEnemy('husk', x+.5, y+.5)); }
+  for(let i=0;i<F.wisps;i++){ const [x,y]=take(); entities.push(mkEnemy('wisp', x+.5, y+.5)); }
+  scatter(F, take);
+}
+
+function scatter(F, take){
+  const rnd=()=>{
+    if(take) return take();
+    for(let t=0;t<200;t++){
+      const x=2+((Math.random()*(N-4))|0), y=2+((Math.random()*(N-4))|0);
+      if(map[y][x]===0 && (Math.abs(x-player.x)+Math.abs(y-player.y))>4) return [x,y];
+    }
+    return [3,3];
+  };
+  for(let i=0;i<F.ale;i++){ const [x,y]=rnd(); pickups.push({kind:'ale', x:x+.5, y:y+.5}); }
+  for(let i=0;i<F.gold;i++){ const [x,y]=rnd(); pickups.push({kind:'gold', x:x+.5, y:y+.5}); }
+  for(let i=0;i<2;i++){
+    if(!loreDeck.length) loreDeck = rngShuffle(LORE.slice());
+    const [x,y]=rnd(); pickups.push({kind:'book', x:x+.5, y:y+.5, lore:loreDeck.pop()});
+  }
+  for(let i=0;i<F.rot;i++){ const [x,y]=rnd(); decals.push({kind:'rot', x, y}); }
+  // bone decals for vibes
+  for(let i=0;i<10;i++){ const [x,y]=rnd(); decals.push({kind:'bones', x, y}); }
+}
+
+function rotAt(x,y){
+  const tx=x|0, ty=y|0;
+  return decals.some(d=>d.kind==='rot'&&d.x===tx&&d.y===ty);
+}
+
+// ---------- entities ----------
+function mkEnemy(kind, x, y){
+  if(kind==='husk') return {kind, x, y, hp:6, maxhp:6, spd:1.7, dmg:2, r:.3, aggro:5.5,
+    img:HUSK, imgF:HUSK_F, face:1, hitcd:0, kx:0, ky:0, wt:0, wx:0, wy:0, flash:0, name:'Soulless Husk'};
+  if(kind==='wisp') return {kind, x, y, hp:3, maxhp:3, spd:3.1, dmg:1, r:.25, aggro:8,
+    img:WISP, imgF:WISP_F, face:1, hitcd:0, kx:0, ky:0, wt:0, wx:0, wy:0, flash:0, bob:Math.random()*6, name:'Rot Wisp'};
+  return {kind:'boss', x, y, hp:70, maxhp:70, spd:1.8, dmg:3, r:.55, aggro:99,
+    img:BOSS, imgF:BOSS_F, face:1, hitcd:0, kx:0, ky:0, wt:0, wx:0, wy:0, flash:0,
+    spit:2.5, pool:4, name:'THE ROTTED SOUL, VEILRUNNER OF LAGENDALE'};
+}
+
+const player = {
+  x:1.5, y:1.5, r:.28, hp:10, maxhp:10, gold:0, kills:0, books:0,
+  fx:1, fy:0, face:1, atkcd:0, swing:0, inv:0, rotTick:0, revived:false, king:null
+};
+
+// ---------- game state ----------
+let state = 'title';       // title | play | lore | dead | win
+let kingSel = 0;
+let banner = '', bannerT = 0;
+let loreBox = null;
+let fade = 0, fadeDir = 0, pendingFloor = -1;
+let shake = 0;
+let time = 0;
+let deadT = 0, winT = 0;
+
+function startGame(){
+  const k = KINGS[kingSel];
+  player.king = k;
+  player.maxhp = k.hp; player.hp = k.hp;
+  player.gold = 0; player.kills = 0; player.books = 0;
+  player.revived = false; player.inv = 0; player.atkcd = 0; player.swing = 0;
+  loreDeck = rngShuffle(LORE.slice());
+  floorNo = 0;
+  genFloor(0);
+  banner = FLOORS[0].name; bannerT = 3;
+  state = 'play';
+}
+
+function nextFloor(){
+  fadeDir = 1; pendingFloor = floorNo+1;
+  SFX.stairs();
+}
+
+function onPress(k){
+  ac();
+  if(state==='title'){
+    if(k==='arrowleft'||k==='a') { kingSel=(kingSel+5)%6; tone(330,.05,'square',.04); }
+    else if(k==='arrowright'||k==='d') { kingSel=(kingSel+1)%6; tone(330,.05,'square',.04); }
+    else if(k==='enter'||k===' '||k==='mouse') startGame();
+    return;
+  }
+  if(state==='lore'){ if(k==='enter'||k===' '||k==='e'||k==='mouse'){ state='play'; loreBox=null; } return; }
+  if(state==='dead'||state==='win'){
+    if(deadT>1||winT>1){ if(k==='enter'||k===' '||k==='mouse'){ state='title'; } }
+    return;
+  }
+  if(state==='play'){
+    if(k===' '||k==='j'||k==='mouse') tryAttack();
+  }
+}
+
+// ---------- movement & combat ----------
+function moveCircle(e, dx, dy){
+  // axis-separated slide against grid
+  let nx = e.x + dx;
+  if(!circleHits(nx, e.y, e.r)) e.x = nx;
+  let ny = e.y + dy;
+  if(!circleHits(e.x, ny, e.r)) e.y = ny;
+}
+function circleHits(x, y, r){
+  const x0=Math.floor(x-r), x1=Math.floor(x+r), y0=Math.floor(y-r), y1=Math.floor(y+r);
+  for(let ty=y0;ty<=y1;ty++) for(let tx=x0;tx<=x1;tx++){
+    if(!solidAt(tx,ty)) continue;
+    const cxn=Math.max(tx,Math.min(x,tx+1)), cyn=Math.max(ty,Math.min(y,ty+1));
+    if((x-cxn)*(x-cxn)+(y-cyn)*(y-cyn) < r*r) return true;
+  }
+  return false;
+}
+
+function tryAttack(){
+  if(player.atkcd>0 || state!=='play') return;
+  player.atkcd = .38; player.swing = .14;
+  SFX.swing();
+  const R = 1.25, k = player.king;
+  for(const e of entities){
+    const dx=e.x-player.x, dy=e.y-player.y, d=Math.hypot(dx,dy);
+    if(d > R + e.r) continue;
+    const dot = (dx/d)*player.fx + (dy/d)*player.fy;
+    if(d>.001 && dot < .25) continue;
+    e.hp -= k.dmg; e.flash = .15;
+    e.kx += (dx/d)*7; e.ky += (dy/d)*7;
+    SFX.hit();
+    spawnParts(e.x, e.y, '#9fff5a', 5);
+    if(e.hp<=0) killEnemy(e);
+  }
+}
+
+function killEnemy(e){
+  entities = entities.filter(o=>o!==e);
+  player.kills++;
+  spawnParts(e.x, e.y, '#c8d0b8', 10);
+  if(e.kind==='boss'){
+    SFX.roar();
+    shake = .6;
+    setTimeout(()=>{ SFX.win(); }, 600);
+    winT = 0; state='win';
+  } else if(Math.random()<.3){
+    pickups.push({kind:'gold', x:e.x, y:e.y});
+  }
+}
+
+function hurtPlayer(d){
+  if(player.inv>0 || state!=='play') return;
+  player.hp -= d; player.inv = .8; shake = .25;
+  SFX.hurt();
+  spawnParts(player.x, player.y, '#e05a4e', 6);
+  if(player.hp<=0){
+    if(player.king===KINGS[5] && !player.revived){
+      player.revived = true;
+      player.hp = Math.ceil(player.maxhp/2);
+      banner = 'THE ALEFORGE ALE CALLS HIM BACK!'; bannerT = 2.5;
+      SFX.ale();
+      return;
+    }
+    SFX.die();
+    deadT = 0; state='dead';
+  }
+}
+
+function spawnParts(x,y,col,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=1+Math.random()*3;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,t:.4+Math.random()*.3,col});
+  }
+}
+
+// ---------- update ----------
+function update(dt){
+  time += dt;
+  if(bannerT>0) bannerT-=dt;
+  if(shake>0) shake-=dt;
+
+  if(fadeDir===1){
+    fade += dt*2.5;
+    if(fade>=1){
+      fade=1; fadeDir=-1;
+      floorNo = pendingFloor;
+      genFloor(floorNo);
+      banner = FLOORS[floorNo].name; bannerT = 3;
+      if(FLOORS[floorNo].boss){ setTimeout(()=>SFX.roar(), 400); }
+    }
+  } else if(fadeDir===-1){
+    fade -= dt*2.5;
+    if(fade<=0){ fade=0; fadeDir=0; }
+  }
+
+  if(state!=='play' || fadeDir===1) return;
+
+  // --- player ---
+  let ix=0, iy=0;
+  if(keys['arrowup']||keys['w']) iy-=1;
+  if(keys['arrowdown']||keys['s']) iy+=1;
+  if(keys['arrowleft']||keys['a']) ix-=1;
+  if(keys['arrowright']||keys['d']) ix+=1;
+  if(ix||iy){
+    // screen dir -> world dir (iso)
+    let wx = ix/2 + iy, wy = iy - ix/2;
+    const l = Math.hypot(wx,wy); wx/=l; wy/=l;
+    player.fx = wx; player.fy = wy;
+    if(ix!==0) player.face = ix>0?1:-1;
+    const s = player.king.spd;
+    moveCircle(player, wx*s*dt, wy*s*dt);
+  }
+  if(player.atkcd>0) player.atkcd-=dt;
+  if(player.swing>0) player.swing-=dt;
+  if(player.inv>0) player.inv-=dt;
+
+  // rot pools hurt
+  if(rotAt(player.x, player.y)){
+    player.rotTick -= dt;
+    if(player.rotTick<=0){ player.rotTick=.8; hurtPlayer(1); }
+  } else player.rotTick = 0;
+
+  // stairs
+  if(stairs && Math.hypot(player.x-(stairs.x+.5), player.y-(stairs.y+.5))<.5 && fadeDir===0){
+    nextFloor();
+  }
+
+  // --- pickups ---
+  for(const p of pickups.slice()){
+    if(Math.hypot(player.x-p.x, player.y-p.y) < .55){
+      pickups = pickups.filter(o=>o!==p);
+      if(p.kind==='gold'){ player.gold += 1+((Math.random()*4)|0); SFX.gold(); }
+      else if(p.kind==='ale'){ player.hp = Math.min(player.maxhp, player.hp+4); SFX.ale(); spawnParts(p.x,p.y,'#f5f0dc',6); }
+      else if(p.kind==='book'){ player.books++; SFX.book(); loreBox = p.lore; state='lore'; }
+    }
+  }
+
+  // --- enemies ---
+  for(const e of entities){
+    if(e.flash>0) e.flash-=dt;
+    if(e.hitcd>0) e.hitcd-=dt;
+    // knockback decay
+    if(Math.abs(e.kx)>.01||Math.abs(e.ky)>.01){
+      moveCircle(e, e.kx*dt, e.ky*dt);
+      e.kx*=Math.pow(.001,dt); e.ky*=Math.pow(.001,dt);
+    }
+    const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy);
+    if(d < e.aggro && state==='play'){
+      const s=e.spd*(e.kind==='boss'&&e.hp<e.maxhp/2?1.55:1);
+      moveCircle(e, dx/d*s*dt, dy/d*s*dt);
+      if(dx!==0) e.face = (dx-dy)>0?1:-1;
+      if(d < e.r+player.r+.12 && e.hitcd<=0){
+        e.hitcd=.8; hurtPlayer(e.dmg);
+      }
+    } else {
+      // wander
+      e.wt-=dt;
+      if(e.wt<=0){ e.wt=1+Math.random()*2; const a=Math.random()*Math.PI*2; e.wx=Math.cos(a); e.wy=Math.sin(a); }
+      moveCircle(e, e.wx*e.spd*.3*dt, e.wy*e.spd*.3*dt);
+    }
+    // boss abilities
+    if(e.kind==='boss'){
+      e.spit-=dt;
+      if(e.spit<=0){
+        e.spit = e.hp<e.maxhp/2 ? 1.6 : 2.6;
+        const base=Math.atan2(dy,dx);
+        for(let i=-1;i<=1;i++){
+          const a=base+i*.35;
+          projectiles.push({x:e.x, y:e.y, vx:Math.cos(a)*4.5, vy:Math.sin(a)*4.5, t:3, r:.2});
+        }
+        tone(90,.2,'sawtooth',.07,-30);
+      }
+      e.pool-=dt;
+      if(e.pool<=0){
+        e.pool=5;
+        const tx=e.x|0, ty=e.y|0;
+        if(!rotAt(tx,ty)) decals.push({kind:'rot', x:tx, y:ty, temp:12});
+      }
+    }
+  }
+
+  // rot pool expiry
+  for(const d of decals) if(d.temp!==undefined) d.temp-=dt;
+  decals = decals.filter(d=>d.temp===undefined||d.temp>0);
+
+  // --- projectiles ---
+  for(const pr of projectiles.slice()){
+    pr.x += pr.vx*dt; pr.y += pr.vy*dt; pr.t -= dt;
+    if(pr.t<=0 || circleHits(pr.x, pr.y, pr.r)){ projectiles=projectiles.filter(o=>o!==pr); continue; }
+    if(Math.hypot(pr.x-player.x, pr.y-player.y) < pr.r+player.r){
+      projectiles=projectiles.filter(o=>o!==pr);
+      hurtPlayer(2);
+    }
+  }
+
+  // --- particles ---
+  for(const p of particles){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.t-=dt; }
+  particles = particles.filter(p=>p.t>0);
+}
+
+// ---------- render ----------
+function isoX(x,y){ return (x-y)*TW/2; }
+function isoY(x,y){ return (x+y)*TH/2; }
+
+function render(){
+  cx.fillStyle = '#08070a';
+  cx.fillRect(0,0,VW,VH);
+  if(state==='title'){ drawTitle(); return; }
+
+  const camX = isoX(player.x, player.y);
+  const camY = isoY(player.x, player.y);
+  const ox = CXO - camX + (shake>0 ? (Math.random()-.5)*6 : 0);
+  const oy = CYO - camY + (shake>0 ? (Math.random()-.5)*6 : 0);
+
+  // pass 1: floor tiles + flat decals
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    if(map[y][x]!==0) continue;
+    const sx = isoX(x+.5,y+.5)+ox, sy = isoY(x+.5,y+.5)+oy;
+    if(sx<-TW||sx>VW+TW||sy<-TH*2||sy>VH+TH*2) continue;
+    drawFloorTile(sx, sy, x, y);
+  }
+  // stairs
+  if(stairs){
+    const sx = isoX(stairs.x+.5, stairs.y+.5)+ox, sy = isoY(stairs.x+.5, stairs.y+.5)+oy;
+    drawDiamond(sx, sy, '#050408');
+    cx.fillStyle='#2a2434';
+    cx.fillRect(sx-6, sy-3, 12, 2);
+    cx.fillRect(sx-4, sy, 8, 2);
+    cx.fillStyle = (Math.sin(time*5)>0)?'#8f7ad9':'#5c4a90';
+    cx.fillRect(sx-1, sy-6, 2, 2);
+  }
+
+  // pass 2: sorted drawables (walls, entities, pickups, projectiles)
+  const draws = [];
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    if(map[y][x]!==1) continue;
+    // skip fully hidden walls (all 4 neighbors walls and behind others) — cheap cull:
+    if(solidAt(x+1,y)&&solidAt(x,y+1)&&solidAt(x-1,y)&&solidAt(x,y-1)&&solidAt(x+1,y+1)) continue;
+    const sx = isoX(x+.5,y+.5)+ox, sy = isoY(x+.5,y+.5)+oy;
+    if(sx<-TW*1.5||sx>VW+TW*1.5||sy<-TH*3||sy>VH+TH*4) continue;
+    draws.push({d:x+y+1, f:()=>drawWall(sx,sy)});
+  }
+  for(const p of pickups){
+    const sx = isoX(p.x,p.y)+ox, sy = isoY(p.x,p.y)+oy;
+    draws.push({d:p.x+p.y, f:()=>drawPickup(p,sx,sy)});
+  }
+  for(const e of entities){
+    const sx = isoX(e.x,e.y)+ox, sy = isoY(e.x,e.y)+oy;
+    draws.push({d:e.x+e.y, f:()=>drawEnemy(e,sx,sy)});
+  }
+  { const sx = isoX(player.x,player.y)+ox, sy = isoY(player.x,player.y)+oy;
+    draws.push({d:player.x+player.y, f:()=>drawPlayer(sx,sy)}); }
+  for(const pr of projectiles){
+    const sx = isoX(pr.x,pr.y)+ox, sy = isoY(pr.x,pr.y)+oy;
+    draws.push({d:pr.x+pr.y, f:()=>{
+      cx.fillStyle='#79c94f'; cx.fillRect(sx-2, sy-4, 4, 4);
+      cx.fillStyle='#c4ff8a'; cx.fillRect(sx-1, sy-3, 2, 2);
+    }});
+  }
+  for(const p of particles){
+    const sx = isoX(p.x,p.y)+ox, sy = isoY(p.x,p.y)+oy;
+    draws.push({d:p.x+p.y+.01, f:()=>{ cx.fillStyle=p.col; cx.fillRect(sx-1,sy-6,2,2); }});
+  }
+  draws.sort((a,b)=>a.d-b.d);
+  for(const d of draws) d.f();
+
+  // darkness rings (quantized retro light)
+  if(!window.__dbg || !window.__dbg.noDark) drawDarkness();
+
+  // HUD & overlays
+  drawHUD();
+  if(state==='lore' && loreBox) drawLore();
+  if(state==='dead') drawDead();
+  if(state==='win') drawWin();
+
+  if(fade>0){ cx.fillStyle=`rgba(4,3,6,${Math.min(1,fade)})`; cx.fillRect(0,0,VW,VH); }
+}
+
+function drawDiamond(sx, sy, col){
+  cx.fillStyle = col;
+  cx.beginPath();
+  cx.moveTo(sx, sy-TH/2); cx.lineTo(sx+TW/2, sy); cx.lineTo(sx, sy+TH/2); cx.lineTo(sx-TW/2, sy);
+  cx.closePath(); cx.fill();
+}
+
+function drawFloorTile(sx, sy, x, y){
+  const v = ((x*7+y*13)%3);
+  drawDiamond(sx, sy, ['#2b2733','#272330','#2e2a37'][v]);
+  // cracks
+  if((x*31+y*17)%7===0){ cx.fillStyle='#1e1a28'; cx.fillRect(sx-3, sy-1, 6, 1); }
+  // decals
+  for(const d of decals){
+    if(d.x!==x||d.y!==y) continue;
+    if(d.kind==='rot'){
+      const pulse = .5+.5*Math.sin(time*3+x+y);
+      drawDiamond(sx, sy, `rgba(60,110,40,${.55+.25*pulse})`);
+      cx.fillStyle=`rgba(159,255,90,${.3+.3*pulse})`;
+      cx.fillRect(sx-2, sy-1, 2, 1); cx.fillRect(sx+3, sy+1, 2, 1); cx.fillRect(sx-6, sy+1, 1, 1);
+    } else if(d.kind==='bones'){
+      cx.fillStyle='#c8c0a8';
+      cx.fillRect(sx-4, sy, 5, 1); cx.fillRect(sx+2, sy-2, 2, 2); cx.fillRect(sx-6, sy-1, 1, 1);
+    }
+  }
+}
+
+function drawWall(sx, sy){
+  const t = sy - WALLH;
+  // left face
+  cx.fillStyle = '#3a3344';
+  cx.beginPath();
+  cx.moveTo(sx-TW/2, sy); cx.lineTo(sx, sy+TH/2); cx.lineTo(sx, sy+TH/2-WALLH); cx.lineTo(sx-TW/2, sy-WALLH);
+  cx.closePath(); cx.fill();
+  // right face
+  cx.fillStyle = '#2c2636';
+  cx.beginPath();
+  cx.moveTo(sx+TW/2, sy); cx.lineTo(sx, sy+TH/2); cx.lineTo(sx, sy+TH/2-WALLH); cx.lineTo(sx+TW/2, sy-WALLH);
+  cx.closePath(); cx.fill();
+  // top
+  cx.fillStyle = '#4d445c';
+  cx.beginPath();
+  cx.moveTo(sx, t-TH/2); cx.lineTo(sx+TW/2, t); cx.lineTo(sx, t+TH/2); cx.lineTo(sx-TW/2, t);
+  cx.closePath(); cx.fill();
+  // brick lines
+  cx.fillStyle = 'rgba(0,0,0,.25)';
+  cx.fillRect(sx-TW/2+2, sy-WALLH+6, TW/2-4, 1);
+  cx.fillRect(sx+2, sy-WALLH+12, TW/2-4, 1);
+}
+
+function drawShadow(sx, sy, w){
+  cx.fillStyle='rgba(0,0,0,.35)';
+  cx.beginPath(); cx.ellipse(sx, sy, w, w/2, 0, 0, Math.PI*2); cx.fill();
+}
+
+function drawPlayer(sx, sy){
+  drawShadow(sx, sy, 8);
+  const img = player.face===1 ? player.king.img : player.king.imgF;
+  if(player.inv>0 && (time*20|0)%2===0){ /* blink */ }
+  else cx.drawImage(img, sx-img.width, sy-img.height*2-2, img.width*2, img.height*2);
+  // swing arc
+  if(player.swing>0){
+    const a = Math.atan2(player.fy+player.fx, (player.fx-player.fy)*.5); // world->screen angle approx
+    cx.strokeStyle = '#ffe9a0'; cx.lineWidth = 2;
+    cx.beginPath();
+    cx.arc(sx, sy-12, 18, a-.9, a+.9);
+    cx.stroke();
+  }
+}
+
+function drawEnemy(e, sx, sy){
+  drawShadow(sx, sy, e.kind==='boss'?16:7);
+  const bob = e.kind==='wisp' ? Math.sin(time*6+e.bob)*3 : 0;
+  const img = e.face===1 ? e.img : e.imgF;
+  if(e.flash>0) cx.globalAlpha = .5;
+  cx.drawImage(img, sx-img.width, sy-img.height*2-2+bob, img.width*2, img.height*2);
+  cx.globalAlpha = 1;
+  if(e.kind!=='boss' && e.hp<e.maxhp){
+    cx.fillStyle='#1a1520'; cx.fillRect(sx-7, sy-img.height*2-7, 14, 2);
+    cx.fillStyle='#7ec850'; cx.fillRect(sx-7, sy-img.height*2-7, 14*e.hp/e.maxhp, 2);
+  }
+}
+
+function drawPickup(p, sx, sy){
+  const bob = Math.sin(time*4+sx)*1.5;
+  drawShadow(sx, sy, 5);
+  let img = COIN;
+  if(p.kind==='ale') img = TANKARD;
+  else if(p.kind==='book') img = BOOK;
+  cx.drawImage(img, sx-img.width, sy-img.height*2-4+bob, img.width*2, img.height*2);
+}
+
+const darkCv = document.createElement('canvas');
+darkCv.width = VW; darkCv.height = VH;
+const dg = darkCv.getContext('2d');
+function drawDarkness(){
+  const lr = (player.king ? player.king.light : 5) * TW/2;
+  const px = CXO, py = CYO;
+  // build quantized light hole with destination-out ellipses (retro stepped light)
+  dg.clearRect(0,0,VW,VH);
+  dg.globalCompositeOperation = 'source-over';
+  dg.fillStyle = 'rgba(4,3,7,.94)';
+  dg.fillRect(0,0,VW,VH);
+  dg.globalCompositeOperation = 'destination-out';
+  const rings = [[1.15,.149],[.95,.3125],[.75,.5455],[.55,1]];
+  for(const [rf, cut] of rings){
+    dg.fillStyle = `rgba(0,0,0,${cut})`;
+    dg.beginPath();
+    dg.ellipse(px, py, lr*rf, lr*rf*.55, 0, 0, Math.PI*2);
+    dg.fill();
+  }
+  cx.drawImage(darkCv, 0, 0);
+  // torch flicker
+  if((time*8|0)%7===0){
+    cx.fillStyle='rgba(255,200,120,.02)';
+    cx.fillRect(0,0,VW,VH);
+  }
+}
+
+// ---------- HUD ----------
+function text(t, x, y, col, size, align){
+  cx.font = `${size||8}px monospace`;
+  cx.textAlign = align||'left';
+  cx.textBaseline = 'top';
+  cx.fillStyle = '#000';
+  cx.fillText(t, x+1, y+1);
+  cx.fillStyle = col||'#e8e0c8';
+  cx.fillText(t, x, y);
+}
+
+function drawHUD(){
+  // HP as tankards
+  const k = player.king;
+  text(k.name.toUpperCase(), 6, 5, '#f4c430', 8);
+  const tanks = Math.ceil(player.maxhp/2);
+  for(let i=0;i<tanks;i++){
+    const full = player.hp >= (i+1)*2, half = player.hp === i*2+1;
+    const x = 6+i*10, y = 16;
+    cx.fillStyle = full ? '#8a5a2b' : (half?'#6a4520':'#2a2430');
+    cx.fillRect(x, y+2, 7, 7);
+    cx.fillStyle = full ? '#f5f0dc' : (half?'#b8b09a':'#3a3440');
+    cx.fillRect(x, y, 7, 3);
+    cx.fillStyle = full||half ? '#a8713a' : '#332d3a';
+    cx.fillRect(x+7, y+3, 2, 4);
+  }
+  // gold / books / floor
+  cx.drawImage(COIN, 6, 30);
+  text('x'+player.gold, 14, 29, '#f4c430');
+  cx.drawImage(BOOK, 40, 30);
+  text('x'+player.books, 50, 29, '#caa96e');
+  text('KILLS '+player.kills, 78, 29, '#9a8fa8');
+
+  if(bannerT>0 && state==='play'){
+    const a = Math.min(1, bannerT);
+    cx.globalAlpha = a;
+    text(banner, VW/2, 48, '#e8e0c8', 10, 'center');
+    cx.globalAlpha = 1;
+  }
+  // boss bar
+  if(bossRef && bossRef.hp>0 && state==='play'){
+    const w = 200, x = VW/2-w/2, y = VH-22;
+    text(bossRef.name, VW/2, y-11, '#9fff5a', 8, 'center');
+    cx.fillStyle='#1a1520'; cx.fillRect(x-1, y-1, w+2, 8);
+    cx.fillStyle='#3a5c28'; cx.fillRect(x, y, w, 6);
+    cx.fillStyle='#9fff5a'; cx.fillRect(x, y, w*Math.max(0,bossRef.hp)/bossRef.maxhp, 6);
+  } else if(state==='play'){
+    text('WASD move · SPACE attack · M mute', VW/2, VH-12, '#5c5568', 8, 'center');
+  }
+}
+
+function wrapText(s, maxw, size){
+  cx.font = `${size}px monospace`;
+  const words = s.split(' '); const lines=[]; let cur='';
+  for(const w of words){
+    const t = cur ? cur+' '+w : w;
+    if(cx.measureText(t).width > maxw){ if(cur) lines.push(cur); cur = w; }
+    else cur = t;
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+function drawLore(){
+  cx.fillStyle='rgba(4,3,7,.75)'; cx.fillRect(0,0,VW,VH);
+  const w=340, x=VW/2-w/2; let y=80;
+  cx.fillStyle='#181322'; cx.fillRect(x-8,y-12,w+16,140);
+  cx.strokeStyle='#caa96e'; cx.lineWidth=1; cx.strokeRect(x-8.5,y-12.5,w+17,141);
+  cx.drawImage(BOOK, VW/2-4, y-6);
+  y+=8;
+  text(loreBox.t, VW/2, y, '#f4c430', 9, 'center'); y+=16;
+  for(const line of wrapText(loreBox.b, w-10, 8)){ text(line, VW/2, y, '#d8d0c0', 8, 'center'); y+=11; }
+  text('[ SPACE ]', VW/2, y+8, '#5c5568', 8, 'center');
+}
+
+function drawDead(){
+  cx.fillStyle=`rgba(20,4,8,${Math.min(.85,deadT)})`; cx.fillRect(0,0,VW,VH);
+  if(deadT>.5){
+    text('YOU HAVE PERISHED', VW/2, 110, '#e05a4e', 14, 'center');
+    text('Your soul is left to Rot with Him.', VW/2, 132, '#b8a8a0', 8, 'center');
+    text(`${player.king.name} — ${player.kills} slain · ${player.gold} gold · depth ${floorNo+1}`, VW/2, 150, '#9a8fa8', 8, 'center');
+  }
+  if(deadT>1) text('[ SPACE ] return to the Gilded Tankard', VW/2, 176, '#5c5568', 8, 'center');
+}
+
+function drawWin(){
+  cx.fillStyle=`rgba(8,6,14,${Math.min(.88,winT*.6)})`; cx.fillRect(0,0,VW,VH);
+  if(winT>.6){
+    text('THE VEILRUNNER IS SLAIN', VW/2, 84, '#f4c430', 14, 'center');
+    for(const [i,l] of [
+      'The Rotted Soul crumbles to dust and the labyrinth falls silent.',
+      'Somewhere above, in the Gilded Tankard, a bard who is almost',
+      'always too drunk to play strikes up a new verse.',
+    ].entries()) text(l, VW/2, 112+i*12, '#d8d0c0', 8, 'center');
+    text(`${player.king.name.toUpperCase()} — LIQUOR KING, ROTSLAYER`, VW/2, 156, '#9fff5a', 9, 'center');
+    text(`${player.kills} slain · ${player.gold} gold · ${player.books} tomes recovered`, VW/2, 172, '#9a8fa8', 8, 'center');
+  }
+  if(winT>1.4) text('[ SPACE ] drink to it', VW/2, 200, '#5c5568', 8, 'center');
+}
+
+// ---------- title ----------
+function drawTitle(){
+  // flickering backdrop
+  cx.fillStyle = '#0a0810'; cx.fillRect(0,0,VW,VH);
+  for(let i=0;i<40;i++){
+    const x=(i*137)%VW, y=(i*211)%VH;
+    cx.fillStyle = 'rgba(90,74,120,.08)';
+    cx.fillRect(x, y, 2, 2);
+  }
+  text('THE PINTLAND ISLES', VW/2, 26, '#9a8fa8', 10, 'center');
+  text('THE ROTTED SOUL’S LABYRINTH', VW/2, 40, '#f4c430', 16, 'center');
+  text('beneath the Hoegaarden Library', VW/2, 62, '#7a7088', 8, 'center');
+
+  text('Sealed for millennia below the catacombs of Lagendale, the Rotten King stirs.', VW/2, 84, '#c8c0b0', 8, 'center');
+  text('The Guardian’s spell is unraveling. Someone has to go down there.', VW/2, 96, '#c8c0b0', 8, 'center');
+  text('Naturally, the Liquor Kings drew straws.', VW/2, 108, '#c8c0b0', 8, 'center');
+
+  // king row
+  const spacing = 64, x0 = VW/2 - spacing*2.5;
+  for(let i=0;i<6;i++){
+    const k = KINGS[i], x = x0+i*spacing, y = 152;
+    if(i===kingSel){
+      cx.fillStyle='#241d33'; cx.fillRect(x-22, y-14, 44, 44);
+      cx.strokeStyle='#f4c430'; cx.strokeRect(x-22.5, y-14.5, 45, 45);
+      const t=Math.sin(time*6)*2;
+      text('▼', x, y-26+t, '#f4c430', 8, 'center');
+    }
+    cx.drawImage(k.img, x-k.img.width, y, k.img.width*2, k.img.height*2);
+  }
+  const k = KINGS[kingSel];
+  text(k.name.toUpperCase(), VW/2, 210, '#f4c430', 10, 'center');
+  text(k.tag, VW/2, 224, '#9a8fa8', 8, 'center');
+  text(k.perk, VW/2, 236, '#c8c0b0', 8, 'center');
+  text(`HP ${k.hp}   DMG ${k.dmg}   SPD ${k.spd>4.5?'fast':k.spd<4?'slow':'avg'}   SIGHT ${k.light>6?'far':'avg'}`, VW/2, 250, '#7ec850', 8, 'center');
+
+  text('◀ ▶ choose your Liquor King  ·  ENTER descend', VW/2, 272, '#5c5568', 8, 'center');
+  text('WASD/arrows move · SPACE attack · M mute', VW/2, 284, '#413b4d', 8, 'center');
+}
+
+// ---------- main loop ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(.05, (now-last)/1000);
+  last = now;
+  if(state==='dead') deadT += dt;
+  if(state==='win') winT += dt;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// debug hook
+window.__game = { get state(){return state;}, set state(s){state=s;}, player, startGame,
+  get entities(){return entities;}, get floorNo(){return floorNo;}, get bossRef(){return bossRef;},
+  set loreBox(l){loreBox=l;}, LORE, hurtPlayer,
+  KINGS, genFloor, nextFloor };
+</script>
+</body>
+</html>
