@@ -1,6 +1,6 @@
 # The Pintland Isles: The Rotted Soul's Labyrinth
 
-A tiny retro isometric dungeon crawler set in the world of the Pintland Isles,
+A retro isometric dungeon crawler set in the world of the Pintland Isles,
 based on the **Master Lore Compendium** of the Liquor Kings.
 
 Sealed for millennia beneath the catacombs of the Hoegaarden Library lies the
@@ -11,37 +11,88 @@ Naturally, the Liquor Kings drew straws.
 
 ## Play
 
-Open `index.html` in any modern browser. That's it — the whole game is a
-single self-contained file with no dependencies, no build step, and no
-network access required.
+Open `index.html` in any modern browser — desktop or phone. The whole game is
+a single self-contained file: no dependencies, no build step, no network.
 
-## How it works
+## The run
 
-- **Choose your Liquor King** — all six are playable, each with a small perk:
-  - **Seamus Bonehardy** — balanced stats
-  - **Jack Anqoak** — lost his soul down here once; sees far in the dark
-  - **Jagerbauhm** — fast on his feet
-  - **Guinnie O'Guinness** — hits like Wagwan's Whopper (high damage)
-  - **Buke** — bones grown strong on vitamin alcohol (very tough, a bit slow)
-  - **Jameson Pilsner** — dies constantly; the ale brings him back, once
-- **Descend three floors**: the Lagendale Catacombs, the River Coffin, and
-  the Sepulcher of the Rotten King — where the Rotted Soul himself waits.
-- Fight **Soulless Husks** and **Rot Wisps**, avoid the spreading **rot
-  pools**, drink **tankards of ale** to heal, pocket gold, and recover lost
-  **tomes of Lagendale** (real excerpts from the labyrinth books in the lore
-  compendium).
+Enter your name, choose your Liquor King, and race the clock through three
+depths. Your fastest completion is recorded in the **Hall of the Liquor
+Kings** — its own tab on the title screen (stored in your browser; one entry
+per name, best time only).
+
+Come home in **under a minute** and the tavern issues you a coupon compelling
+a randomly chosen Liquor King to shotgun a beer on camera at the next happy
+hour. Die instead, and there is a small chance the thing that killed you gets
+the last word.
+
+- **Depth I — The Lagendale Catacombs.** Purple stone, Soulless Husks and
+  Rot Wisps. A Shrine Helm is hidden in a dead end.
+- **Depth II — The River Coffin.** Blood-rust halls patrolled by the
+  Betrayed, spear-throwing ghosts of the 800. **The Guardian of Lagendale**
+  stands over the sealed stairs — the descent doesn't open until he falls.
+- **Depth III — The Sepulcher of the Rotten King.** A near-black horror maze
+  crawling with the Skinless of the 138, ending in the arena of **the Rotted
+  Soul** himself.
+
+## The Liquor Kings
+
+| King | Style |
+| --- | --- |
+| Seamus Bonehardy | Balanced; gold pickups worth +50% |
+| Jack Anqoak | Fragile oracle: far sight, senses the way down |
+| Jagerbauhm | Glass cannon: very fast, quick weak swings |
+| Guinnie O'Guinness | Heavy hitter: slow crushing blows, huge knockback |
+| Buke | The tank: 20 HP, slow, ale heals extra |
+| Jameson Pilsner | Ale heals double and he revives twice |
+
+## Wagwan's Stank Tank
+
+Between depths you surface into **Wagwan's Stank Tank**, where Wagwan himself
+lays six items on the counter. Which items appear is luck; the prices never
+move — **common 15g, rare 30g, epic 50g, legendary 80g**. Legendaries are a
+windfall you'll rarely see: the Glyph of Purity made whole, Jagerbauhm's
+Nether Key, the Gilded Tankard, Sackbeard's Black Flag, or the Crown of the
+Rotted Soul.
+
+**The run timer stops while you shop**, so browsing never costs you a record.
+
+## Relics & rewards
+
+Lore relics from the Compendium also spawn in the maze: **Wagwan's Whopper**,
+**Nike Dunks**, **Sackbeard's Armor**, the **Hazmat Suit**, the **Light of
+the Oracle**, the **Hollow Urn**, the **Fortunate Scarab**, and the
+**Blicky** (8 bullets, no refills).
+
+- Collect **all the books** on a depth for a Fragment of the Glyph of Purity
+  (+2 max HP); complete all three for the full Glyph.
+- Drink **all the ale** on a depth for the **DRUNKEN STUPOR** — six seconds
+  untouchable and unstoppable.
+- Drinking at full health builds the **drunk meter**: harder swings,
+  wobblier legs.
+- Four **Shrine armor pieces** are scattered across the run; the full set
+  keeps the Shrines' promise.
+- **Cumsock**, the Kings' beloved goat, is caged deep in the Sepulcher. Free
+  him and he'll trot at your side, headbutting lesser horrors away (no
+  damage — he's a lover, not a fighter). He wants no part of the Rotted Soul.
 
 ## Controls
 
-| Key | Action |
+| Input | Action |
 | --- | --- |
 | WASD / Arrow keys | Move |
 | Space / J / Click | Attack |
+| K | Fire the Blicky (if found) |
+| L | Turn the Nether Key (if bought) |
+| 1–6 / click | Buy in the Stank Tank |
+| Tab | Switch between DESCEND and RECORDS |
 | M | Mute |
+| Touch devices | Virtual joystick (left) + ATK/GUN buttons (right) |
 
 ## Tech
 
 Vanilla JavaScript on a single 480×300 canvas, upscaled with pixelated
 rendering. Procedurally generated mazes (recursive backtracker), painter's
-algorithm isometric renderer, code-drawn pixel sprites, and WebAudio bleeps.
-No assets, no libraries.
+algorithm isometric renderer with cutaway walls, code-drawn pixel sprites,
+per-depth palettes, WebAudio bleeps, localStorage leaderboard. No assets,
+no libraries.
