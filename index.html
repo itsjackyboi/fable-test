@@ -80,6 +80,12 @@ const SFX = {
   die(){ tone(196,.5,'sawtooth',.1,-150); },
   roar(){ tone(65,.6,'sawtooth',.13,-20); tone(98,.5,'square',.07,-40); },
   heartbeat(){ tone(46,.16,'sine',.11,-6); setTimeout(()=>tone(42,.14,'sine',.09,-6),190); },
+  scare(){
+    if(muted) return;
+    tone(58,.6,'sawtooth',.16,-12); tone(61,.6,'square',.13,-10);
+    tone(1200,.35,'sawtooth',.1,-900);
+    setTimeout(()=>{ tone(44,.5,'sawtooth',.15,-8); }, 120);
+  },
   bleat(){ tone(740,.09,'sawtooth',.07,-120); setTimeout(()=>tone(660,.13,'sawtooth',.06,-180),90); },
   bonk(){ tone(180,.08,'square',.09,-60); },
   win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.25,'square',.08),i*140)); }
@@ -123,27 +129,27 @@ const KING_ROWS = [
 const KINGS = [
   { name:'Seamus Bonehardy', tag:'"King of Kegs" — sitting Mayor of Aleforge',
     perk:'Shrewd economics: gold pickups worth +50%.',
-    hp:12, spd:4.4, dmg:3, light:5, cd:.38, goldMul:1.5, kb:7, revives:0,
+    hp:12, spd:4.75, dmg:3, light:5, cd:.38, goldMul:1.5, kb:7, revives:0,
     coat:'#2e7d32', hair:'#6d4c2f', skin:'#e8b98a' },
   { name:'Jack Anqoak', tag:'"Oracle of Aleforge" — CEO, Goldcoral Inc.',
     perk:'Fragile soulless oracle: far sight + senses the way down.',
-    hp:6, spd:4.2, dmg:3, light:8, cd:.38, compass:true, kb:7, revives:0,
+    hp:6, spd:4.55, dmg:3, light:8, cd:.38, compass:true, kb:7, revives:0,
     coat:'#6a1fa0', hair:'#1c1c22', skin:'#d9cfc4' },
   { name:'Jagerbauhm', tag:'"Drunken Angel" — closed the Nether portal',
     perk:'Glass cannon: very fast, quick swings, weak hits.',
-    hp:8, spd:6.0, dmg:2, light:5, cd:.27, kb:7, revives:0,
-    coat:'#b03a2e', hair:'#d9b44a', skin:'#e8b98a' },
+    hp:8, spd:6.5, dmg:2, light:5, cd:.27, kb:7, revives:0,
+    coat:'#b03a2e', hair:'#20180f', skin:'#8a5a3c' },
   { name:"Guinnie O'Guinness", tag:'Deserter, bouncer, street reaper of Owe Block',
     perk:'Heavy hitter: crushing slow swings, huge knockback.',
-    hp:10, spd:4.0, dmg:7, light:5, cd:.61, kb:13, revives:0,
+    hp:10, spd:4.35, dmg:7, light:5, cd:.61, kb:13, revives:0,
     coat:'#37474f', hair:'#c05621', skin:'#e8b98a' },
   { name:'Buke', tag:'No middle name, no last name. Raised on brew.',
     perk:'The tank: enormous health, slow, ale heals +2 extra.',
-    hp:20, spd:3.2, dmg:3, light:5, cd:.38, aleBonus:2, kb:7, revives:0,
+    hp:20, spd:3.5, dmg:3, light:5, cd:.38, aleBonus:2, kb:7, revives:0,
     coat:'#1e5aa8', hair:'#3e2c1c', skin:'#e8b98a' },
   { name:'Jameson Pilsner', tag:'Captain of the Coors Golden Isles',
     perk:'Dies constantly: ale heals double, comes back TWICE.',
-    hp:6, spd:4.6, dmg:3, light:5, cd:.38, aleMul:2, revives:2, kb:7,
+    hp:6, spd:5.0, dmg:3, light:5, cd:.38, aleMul:2, revives:2, kb:7,
     coat:'#c07f28', hair:'#26211c', skin:'#e8b98a' },
 ];
 KINGS.forEach(k=>{
@@ -313,6 +319,28 @@ const CUMSOCK = bake([
 ], { W:'#eae8e0', h:'#c0a878', d:'#1a1a1a', b:'#d8d0c0' });
 const CUMSOCK_F = flip(CUMSOCK);
 
+// Wagwan, proprietor of the Stank Tank: knit tam over locs, apron, warm palette.
+const WAGWAN = bake([
+  '..TTTTTT..',
+  '.TTTTTTTT.',
+  '.TgTTTTgT.',
+  '.LLLLLLLL.',
+  '.LSSSSSSL.',
+  '.LSdSSdSL.',
+  '.LSSSSSSL.',
+  '.LSSmmSSL.',
+  '.LLSSSSLL.',
+  '..LSSSSL..',
+  '.CCCCCCCC.',
+  'SCCAAAACCS',
+  'SCCAAAACCS',
+  '.CCAAAACC.',
+  '.CCCCCCCC.',
+  '..BB..BB..',
+  '..BB..BB..',
+], { T:'#2e7d32', g:'#f4c430', L:'#2a1c12', S:'#6b4432', d:'#120c08',
+     m:'#4a2c1c', C:'#8a3a2a', A:'#d8c8a8', B:'#3a2a1c' });
+
 // relic sprites
 const SPR_WHOPPER = bake([
   '..s.s...',
@@ -431,6 +459,91 @@ const RELICS = [
   { id:'blicky',  name:'THE BLICKY', desc:'[K] fire · 8 bullets, no refills', img:SPR_BLICKY },
 ];
 
+// ---------- Wagwan's Stank Tank ----------
+// Fixed prices per tier; only which items appear is random.
+const TIERS = {
+  common:    { price:15, weight:55, col:'#c8c0b0', label:'COMMON' },
+  rare:      { price:30, weight:30, col:'#6ec8ff', label:'RARE' },
+  epic:      { price:50, weight:12, col:'#c07aff', label:'EPIC' },
+  legendary: { price:80, weight:3,  col:'#f4c430', label:'LEGENDARY' },
+};
+// apply() mutates the player; `once` items are excluded once owned.
+const SHOP_ITEMS = [
+  // --- COMMON ---
+  { id:'amber', tier:'common', name:'PINT OF ALEFORGE AMBER', desc:'heal 4 HP now',
+    repeat:true, apply(){ player.hp = Math.min(player.maxhp, player.hp+4); } },
+  { id:'whetstone', tier:'common', name:'WHETSTONE', desc:'+1 damage',
+    repeat:true, apply(){ player.bonusDmg += 1; } },
+  { id:'waxboots', tier:'common', name:'WAXED BOOTS', desc:'+8% move speed',
+    repeat:true, apply(){ player.spdMul *= 1.08; } },
+  { id:'candle', tier:'common', name:'TALLOW CANDLE', desc:'+1.2 sight radius',
+    repeat:true, apply(){ player.lightBonus += 1.2; } },
+  { id:'rations', tier:'common', name:'SALTED RATIONS', desc:'+2 max HP',
+    repeat:true, apply(){ player.maxhp += 2; player.hp = Math.min(player.maxhp, player.hp+2); } },
+  // --- RARE (the existing relics, now purchasable) ---
+  { id:'dunks', tier:'rare', name:'NIKE DUNKS', desc:'+20% move speed',
+    apply(){ player.spdMul *= 1.2; player.relics.dunks = RELICS.find(r=>r.id==='dunks'); } },
+  { id:'sbarmor', tier:'rare', name:"SACKBEARD'S ARMOR", desc:'damage taken -1',
+    apply(){ player.dmgRed += 1; player.relics.sbarmor = RELICS.find(r=>r.id==='sbarmor'); } },
+  { id:'hazmat', tier:'rare', name:'HAZMAT SUIT', desc:'immune to rot pools',
+    apply(){ player.rotImmune = true; player.relics.hazmat = RELICS.find(r=>r.id==='hazmat'); } },
+  { id:'lantern', tier:'rare', name:'LIGHT OF THE ORACLE', desc:'+2.5 sight radius',
+    apply(){ player.lightBonus += 2.5; player.relics.lantern = RELICS.find(r=>r.id==='lantern'); } },
+  { id:'scarab', tier:'rare', name:'FORTUNATE SCARAB', desc:'shows the way down',
+    apply(){ player.compass = true; player.relics.scarab = RELICS.find(r=>r.id==='scarab'); } },
+  { id:'blicky', tier:'rare', name:'THE BLICKY', desc:'[K] fire - 8 bullets',
+    apply(){ player.blickyAmmo += 8; player.relics.blicky = RELICS.find(r=>r.id==='blicky'); } },
+  // --- EPIC ---
+  { id:'whopper', tier:'epic', name:"WAGWAN'S WHOPPER", desc:'+2 damage',
+    apply(){ player.bonusDmg += 2; player.relics.whopper = RELICS.find(r=>r.id==='whopper'); } },
+  { id:'urn', tier:'epic', name:'HOLLOW URN', desc:'survive one killing blow',
+    apply(){ player.urnCharge = true; player.relics.urn = RELICS.find(r=>r.id==='urn'); } },
+  { id:'knuckles', tier:'epic', name:"GUINNIE'S KNUCKLES", desc:'+60% knockback, hits stagger',
+    apply(){ player.kbMul *= 1.6; player.heavyStagger = true; } },
+  { id:'sprig', tier:'epic', name:"VEILWALKER'S SPRIG", desc:'regenerate 1 HP every 12s',
+    apply(){ player.regen = true; player.regenT = 12; } },
+  { id:'bell', tier:'epic', name:"CUMSOCK'S BELL", desc:'the goat answers, any depth',
+    apply(){ player.bell = true; summonCumsock(); } },
+  // --- LEGENDARY ---
+  { id:'glyph', tier:'legendary', name:'THE GLYPH OF PURITY, WHOLE', desc:'full heal, +2 dmg, rot heals you',
+    apply(){ player.glyphFull = true; player.hp = player.maxhp; player.rotHeals = true; player.rotImmune = true; } },
+  { id:'netherkey', tier:'legendary', name:"JAGERBAUHM'S NETHER KEY", desc:'[L] warp to the stairs, once a floor',
+    apply(){ player.netherKey = true; player.netherUsed = false; } },
+  { id:'tankard', tier:'legendary', name:'THE GILDED TANKARD', desc:'every ale brings a stupor',
+    apply(){ player.gildedTankard = true; } },
+  { id:'blackflag', tier:'legendary', name:"SACKBEARD'S BLACK FLAG", desc:'ignore the next 3 killing blows',
+    apply(){ player.blackFlag = 3; } },
+  { id:'rotcrown', tier:'legendary', name:'CROWN OF THE ROTTED SOUL', desc:'+4 damage, but you take +1 from all',
+    apply(){ player.bonusDmg += 4; player.dmgRed -= 1; } },
+];
+function itemOwned(it){
+  if(it.repeat) return false;
+  return !!player.shopOwned[it.id] || !!player.relics[it.id];
+}
+// Weighted draw of 6 distinct items the player can still use.
+// The weight belongs to the TIER, not the item: pick a tier by weight, then a
+// random item inside it. Weighting per item would multiply a tier's odds by how
+// many items it happens to contain, which is how legendaries got common.
+function rollStock(){
+  const pool = SHOP_ITEMS.filter(it=>!itemOwned(it));
+  const picked = [];
+  while(picked.length<6 && pool.length){
+    const tiers = Object.keys(TIERS).filter(t=>pool.some(it=>it.tier===t));
+    let total = 0;
+    for(const t of tiers) total += TIERS[t].weight;
+    let r = Math.random()*total, tier = tiers[tiers.length-1];
+    for(const t of tiers){
+      r -= TIERS[t].weight;
+      if(r<=0){ tier = t; break; }
+    }
+    const inTier = pool.filter(it=>it.tier===tier);
+    const choice = inTier[(Math.random()*inTier.length)|0];
+    picked.push(choice);
+    pool.splice(pool.indexOf(choice),1);
+  }
+  return picked;
+}
+
 // ---------- lore books ----------
 const LORE = [
   {t:'A CARVED WARNING', b:'"These stones were laid by hands now returned to the earth. They will stand when your bones have long since followed. Enter as one who understands this, or do not enter at all."'},
@@ -477,16 +590,24 @@ const FLOORS = [
 // ---------- leaderboard ----------
 function lbLoad(){ try{ return JSON.parse(localStorage.getItem('pintland_lb')||'{}'); }catch(e){ return {}; } }
 function lbSave(o){ try{ localStorage.setItem('pintland_lb', JSON.stringify(o)); }catch(e){} }
-function lbRecord(name, ms){
+// Entries are {ms, king, date}. v2 saved a bare number, so normalise on read.
+function lbEntry(v){
+  if(typeof v === 'number') return { ms:v, king:'', date:0 };
+  return { ms:v.ms, king:v.king||'', date:v.date||0 };
+}
+function lbRecord(name, ms, king){
   const lb = lbLoad();
-  const prev = lb[name];
-  const improved = prev===undefined || ms<prev;
-  if(improved){ lb[name]=ms; lbSave(lb); }
+  const prev = lb[name] === undefined ? null : lbEntry(lb[name]);
+  const improved = !prev || ms < prev.ms;
+  if(improved){ lb[name] = { ms, king:king||'', date:Date.now() }; lbSave(lb); }
   return improved;
 }
 function lbTop(n){
   const lb = lbLoad();
-  return Object.entries(lb).sort((a,b)=>a[1]-b[1]).slice(0,n);
+  return Object.entries(lb)
+    .map(([name,v])=>{ const e = lbEntry(v); return [name, e.ms, e.king]; })
+    .sort((a,b)=>a[1]-b[1])
+    .slice(0,n);
 }
 function fmtMs(ms){
   const t = Math.max(0,ms|0), m = (t/60000)|0, s = ((t%60000)/1000)|0, d = ((t%1000)/100)|0;
@@ -510,6 +631,10 @@ let loreBox = null;
 let fade = 0, fadeDir = 0, pendingFloor = -1;
 let shake = 0;
 let time = 0, runMs = 0, finalMs = 0, lbImproved = false, shotKing = '';
+let bloodT = 0;
+let shopStock = [], shopSel = 0, shopMsg = '', shopMsgT = 0, shopVisits = 0;
+let couponNo = '';
+let scarePending = false, scareT = 0;
 let deadT = 0, winT = 0, dyingT = 0;
 let hbT = 0;
 
@@ -520,7 +645,10 @@ const player = {
   rotImmune:false, urnCharge:false, compass:false,
   blickyAmmo:0, blickyCd:0,
   drunk:0, drunkT:0, stuporT:0,
-  glyphFrags:0, glyphFull:false, armorSet:false
+  glyphFrags:0, glyphFull:false, armorSet:false,
+  // shop-purchased effects
+  shopOwned:{}, kbMul:1, heavyStagger:false, regen:false, regenT:0, bell:false,
+  rotHeals:false, netherKey:false, netherUsed:false, gildedTankard:false, blackFlag:0
 };
 
 function pDmg(){ return player.king.dmg + player.bonusDmg + player.drunk + (player.glyphFull?2:0) + (player.armorSet?2:0); }
@@ -710,9 +838,14 @@ function startGame(){
   player.compass = !!k.compass; player.blickyAmmo = 0; player.blickyCd = 0;
   player.drunk = 0; player.drunkT = 0; player.stuporT = 0;
   player.glyphFrags = 0; player.glyphFull = false; player.armorSet = false;
+  player.shopOwned = {}; player.kbMul = 1; player.heavyStagger = false;
+  player.regen = false; player.regenT = 0; player.bell = false; player.rotHeals = false;
+  player.netherKey = false; player.netherUsed = false; player.gildedTankard = false;
+  player.blackFlag = 0;
+  shopStock = []; shopMsg = ''; shopMsgT = 0;
   loreDeck = rngShuffle(LORE.slice());
   relicDeck = rngShuffle(RELICS.slice());
-  runMs = 0; finalMs = 0; lbImproved = false;
+  runMs = 0; finalMs = 0; lbImproved = false; scarePending = false; scareT = 0;
   floorNo = 0;
   genFloor(0);
   banner = FLOORS[0].name; bannerT = 3;
@@ -722,6 +855,41 @@ function nextFloor(){
   fadeDir = 1; pendingFloor = floorNo+1;
   SFX.stairs();
 }
+// Cumsock's Bell: the goat turns up already freed, wherever you are.
+function summonCumsock(){
+  if(cumsock){ cumsock.rescued = true; cumsock.x = player.x; cumsock.y = player.y + .6; }
+  else cumsock = {x:player.x, y:player.y+.6, r:.25, rescued:true, face:1, buttCd:0};
+  SFX.bleat();
+}
+// Wagwan's Stank Tank sits between the depths. runMs only accrues in 'play',
+// so the timer is paused for the whole visit and records stay honest.
+function openShop(){
+  shopStock = rollStock();
+  shopSel = 0; shopMsg = ''; shopMsgT = 0; shopVisits++;
+  state = 'shop';
+  SFX.stairs();
+  [523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.12,'triangle',.06),i*90));
+}
+function closeShop(){
+  state = 'play';
+  nextFloor();
+}
+function buyItem(i){
+  const it = shopStock[i];
+  if(!it || it.sold) return;
+  const price = TIERS[it.tier].price;
+  if(player.gold < price){
+    shopMsg = "Nuh enough gold fi dat one, king."; shopMsgT = 2.2;
+    tone(140,.14,'square',.05,-40);
+    return;
+  }
+  player.gold -= price;
+  it.sold = true;
+  if(!it.repeat) player.shopOwned[it.id] = true;
+  it.apply();
+  shopMsg = `${it.name} — ${it.desc}`; shopMsgT = 2.6;
+  SFX.relic();
+}
 
 // ---------- input: name field ----------
 // A real <input> is the single source of truth for the name on every device:
@@ -729,6 +897,11 @@ function nextFloor(){
 // and window.prompt() is blocked in sandboxed iframes.
 const nameInput = document.getElementById('nameInput');
 function sanitizeName(s){ return s.replace(/[^a-zA-Z0-9 _\-']/g,'').slice(0,12); }
+function setTitleTab(i){
+  titleTab = i;
+  if(i===0) showNameInput(); else hideNameInput();
+  tone(i===0?440:520,.06,'square',.04);
+}
 function showNameInput(){
   nameInput.value = playerName;
   nameInput.style.display = 'block';
@@ -741,6 +914,7 @@ function hideNameInput(){
 nameInput.addEventListener('keydown', e=>{
   e.stopPropagation();
   ac();
+  if(e.key==='Tab'){ e.preventDefault(); setTitleTab(1); return; }
   if(e.key==='Enter'){
     e.preventDefault();
     if(sanitizeName(nameInput.value).trim().length>=2) confirmName();
@@ -761,8 +935,10 @@ const keys = {};
 addEventListener('keydown', e=>{
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
   if(state==='title' && titlePhase==='name'){
+    ac();
+    if(e.key==='Tab'){ e.preventDefault(); setTitleTab(titleTab===0?1:0); return; }
     // route stray keys into the name field
-    ac(); nameInput.focus();
+    if(titleTab===0) nameInput.focus();
     return;
   }
   keys[e.key.toLowerCase()] = true;
@@ -782,13 +958,22 @@ function onPress(k){
     return;
   }
   if(state==='lore'){ if(k==='enter'||k===' '||k==='e'||k==='mouse'){ state='play'; loreBox=null; } return; }
+  if(state==='shop'){
+    if(k>='1'&&k<='6') buyItem(parseInt(k,10)-1);
+    else if(k==='arrowleft'||k==='a') shopSel=(shopSel+5)%6;
+    else if(k==='arrowright'||k==='d') shopSel=(shopSel+1)%6;
+    else if(k===' ') buyItem(shopSel);
+    else if(k==='enter'||k==='escape') closeShop();
+    return;
+  }
   if(state==='dead'||state==='win'){
-    if(deadT>1||winT>1){ if(k==='enter'||k===' '||k==='mouse'){ state='title'; titlePhase='king'; } }
+    if(deadT>1||winT>1){ if(k==='enter'||k===' '||k==='mouse'){ state='title'; titlePhase='king'; titleTab=0; } }
     return;
   }
   if(state==='play'){
     if(k===' '||k==='j'||k==='mouse') tryAttack();
     if(k==='k') tryBlicky();
+    if(k==='l') tryNetherKey();
   }
 }
 
@@ -803,8 +988,14 @@ const BTN_GUN = {x:VW-38, y:VH-92, r:15};
 cv.addEventListener('pointerdown', e=>{
   e.preventDefault(); ac();
   const p = evPos(e);
-  // any tap/click during name entry focuses the real input (opens the keyboard)
-  if(state==='title' && titlePhase==='name'){ nameInput.focus(); return; }
+  // tabs first, then any tap during name entry focuses the real input (opens the keyboard)
+  if(state==='title' && titlePhase==='name'){
+    const t = titleTabHit(p);
+    if(t>=0){ setTitleTab(t); return; }
+    if(titleTab===0) nameInput.focus();
+    return;
+  }
+  if(state==='shop'){ shopClick(p); return; }
   if(!IS_TOUCH){
     // desktop mouse: title hit-test kings, otherwise generic press
     if(state==='title' && titlePhase==='king' && titleKingHit(p)>=0){ kingSel=titleKingHit(p); tone(330,.05,'square',.04); return; }
@@ -817,6 +1008,7 @@ cv.addEventListener('pointerdown', e=>{
     if(p.y>256){ startGame(); return; }
     return;
   }
+  if(state==='shop'){ shopClick(p); return; }
   if(state!=='play'){ onPress('mouse'); return; }
   if(Math.hypot(p.x-BTN_ATK.x,p.y-BTN_ATK.y)<BTN_ATK.r+8){ touch.btns[e.pointerId]='atk'; tryAttack(); return; }
   if(player.blickyAmmo>0 && Math.hypot(p.x-BTN_GUN.x,p.y-BTN_GUN.y)<BTN_GUN.r+8){ touch.btns[e.pointerId]='gun'; tryBlicky(); return; }
@@ -841,6 +1033,15 @@ cv.addEventListener('pointercancel', endPointer);
 
 // title king portrait hit test (returns index or -1)
 const KING_SPACING = 64, KING_Y = 148;
+let titleTab = 0; // 0 = DESCEND, 1 = RECORDS
+function tabRect(i){ return { x: VW/2 - 104 + i*104, y: 74, w: 100, h: 16 }; }
+function titleTabHit(p){
+  for(let i=0;i<2;i++){
+    const r = tabRect(i);
+    if(p.x>=r.x && p.x<=r.x+r.w && p.y>=r.y && p.y<=r.y+r.h) return i;
+  }
+  return -1;
+}
 function titleKingHit(p){
   const x0 = VW/2 - KING_SPACING*2.5;
   for(let i=0;i<6;i++){
@@ -871,7 +1072,7 @@ function tryAttack(){
   if(player.atkcd>0 || state!=='play') return;
   player.atkcd = player.king.cd; player.swing = .14;
   SFX.swing();
-  const R = 1.25, dmg = pDmg(), kb = player.king.kb;
+  const R = 1.25, dmg = pDmg(), kb = player.king.kb * player.kbMul;
   for(const e of entities){
     const dx=e.x-player.x, dy=e.y-player.y, d=Math.hypot(dx,dy);
     if(d > R + e.r) continue;
@@ -890,10 +1091,30 @@ function tryBlicky(){
   projectiles.push({x:player.x, y:player.y, vx:player.fx*8, vy:player.fy*8, t:2.5, r:.15, dmg:3,
     friendly:true, c1:'#ffe9a0', c2:'#fff'});
 }
+function tryNetherKey(){
+  if(state!=='play' || !player.netherKey || player.netherUsed) return;
+  const tgt = arenaC || (stairs ? {x:stairs.x+.5, y:stairs.y+.5} : null);
+  if(!tgt) return;
+  player.netherUsed = true;
+  spawnParts(player.x, player.y, '#c07aff', 14);
+  player.x = tgt.x; player.y = tgt.y - (arenaC ? 3 : 0);
+  spawnParts(player.x, player.y, '#c07aff', 14);
+  banner = 'THE NETHER KEY TURNS'; bannerT = 2;
+  shake = .3;
+  [880,660,440].forEach((f,i)=>setTimeout(()=>tone(f,.14,'sawtooth',.06,-120),i*70));
+}
 function hitEnemy(e, dmg, kx, ky){
   e.hp -= dmg; e.flash = .15;
   e.kx += kx||0; e.ky += ky||0;
-  if(e.kind==='guardian'||e.kind==='boss') e.aggroed = true;
+  // stagger: lesser horrors stop pursuing for a beat so the knockback actually
+  // lands. Without it, fast mobs (Skinless) re-close the gap the same frame.
+  if(e.kind!=='guardian' && e.kind!=='boss'){
+    let st = e.kind==='skinless' ? .45 : .3;
+    if(player.heavyStagger) st += .25;
+    e.stagger = Math.max(e.stagger||0, st);
+  } else {
+    e.aggroed = true;
+  }
   SFX.hit();
   spawnParts(e.x, e.y, floorNo===1?'#ff9a7a':'#9fff5a', 5);
   if(e.hp<=0) killEnemy(e);
@@ -904,8 +1125,9 @@ function killEnemy(e){
   spawnParts(e.x, e.y, '#c8d0b8', 10);
   if(e.kind==='boss'){
     finalMs = runMs;
-    lbImproved = lbRecord(playerName||'???', finalMs);
+    lbImproved = lbRecord(playerName||'???', finalMs, player.king ? player.king.name : '');
     shotKing = KINGS[(Math.random()*KINGS.length)|0].name;
+    couponNo = 'PL-' + String(1000 + ((Math.random()*8999)|0));
     SFX.roar(); shake = .6;
     setTimeout(()=>{ SFX.win(); }, 600);
     winT = 0; state='win';
@@ -925,10 +1147,17 @@ function killEnemy(e){
 function hurtPlayer(d){
   if(player.inv>0 || player.stuporT>0 || state!=='play') return;
   d = Math.max(1, d - player.dmgRed);
-  player.hp -= d; player.inv = .8; shake = .25;
+  player.hp -= d; player.inv = .8; shake = .45;
+  bloodT = Math.min(1.6, (bloodT||0) + .9 + d*.12);
   SFX.hurt();
   spawnParts(player.x, player.y, '#e05a4e', 6);
   if(player.hp<=0){
+    if(player.blackFlag>0){
+      player.blackFlag--; player.hp = 1;
+      banner = `THE BLACK FLAG HOLDS (${player.blackFlag} left)`; bannerT = 2.5;
+      SFX.armor();
+      return;
+    }
     if(player.urnCharge){
       player.urnCharge = false; player.hp = 1;
       banner = 'THE HOLLOW URN SHATTERS — YOUR SOUL RETURNS'; bannerT = 2.5;
@@ -943,6 +1172,8 @@ function hurtPlayer(d){
       return;
     }
     SFX.die();
+    // 5%: the depth's horror lunges at the screen before the death card
+    scarePending = Math.random() < .05;
     dyingT = 0; state='dying';
   }
 }
@@ -969,6 +1200,11 @@ function applyPickup(p){
       player.hp = Math.min(player.maxhp, player.hp+heal);
     }
     SFX.ale(); spawnParts(p.x,p.y,'#f5f0dc',6);
+    if(player.gildedTankard){
+      player.stuporT = Math.max(player.stuporT, 4);
+      banner = 'THE GILDED TANKARD OVERFLOWS — STUPOR!'; bannerT = 2.5;
+      SFX.stupor();
+    }
     if(aleGot>=aleTotal && aleTotal>0){
       player.stuporT = 6;
       banner = 'DRUNKEN STUPOR! UNTOUCHABLE AND UNSTOPPABLE'; bannerT = 3;
@@ -1021,6 +1257,8 @@ function update(dt){
   if(state==='title' && titlePhase==='name') playerName = sanitizeName(nameInput.value);
   if(bannerT>0) bannerT-=dt;
   if(shake>0) shake-=dt;
+  if(bloodT>0) bloodT-=dt;
+  if(shopMsgT>0) shopMsgT-=dt;
 
   if(fadeDir===1){
     fade += dt*2.5;
@@ -1029,6 +1267,7 @@ function update(dt){
       floorNo = pendingFloor;
       genFloor(floorNo);
       banner = FLOORS[floorNo].name; bannerT = 3;
+      player.netherUsed = false;
       if(FLOORS[floorNo].boss){ setTimeout(()=>SFX.roar(), 400); }
     }
   } else if(fadeDir===-1){
@@ -1075,14 +1314,28 @@ function update(dt){
   if(player.drunkT>0){ player.drunkT-=dt; if(player.drunkT<=0) player.drunk=0; }
 
   // rot pools hurt
-  if(!player.rotImmune && rotAt(player.x, player.y)){
+  if(rotAt(player.x, player.y) && (!player.rotImmune || player.rotHeals)){
     player.rotTick -= dt;
-    if(player.rotTick<=0){ player.rotTick=.8; hurtPlayer(1); }
+    if(player.rotTick<=0){
+      player.rotTick=.8;
+      if(player.rotHeals){
+        if(player.hp<player.maxhp){ player.hp++; spawnParts(player.x,player.y,'#9fff5a',4); }
+      } else hurtPlayer(1);
+    }
   } else player.rotTick = 0;
+
+  // Veilwalker's Sprig
+  if(player.regen){
+    player.regenT -= dt;
+    if(player.regenT<=0){
+      player.regenT = 12;
+      if(player.hp<player.maxhp){ player.hp++; spawnParts(player.x,player.y,'#7ec850',5); tone(660,.1,'triangle',.05,40); }
+    }
+  }
 
   // stairs
   if(stairs && !stairsSealed && Math.hypot(player.x-(stairs.x+.5), player.y-(stairs.y+.5))<.5 && fadeDir===0){
-    nextFloor();
+    openShop();
   }
 
   // --- pickups ---
@@ -1097,10 +1350,12 @@ function update(dt){
   for(const e of entities){
     if(e.flash>0) e.flash-=dt;
     if(e.hitcd>0) e.hitcd-=dt;
+    if(e.stagger>0) e.stagger-=dt;
     if(Math.abs(e.kx)>.01||Math.abs(e.ky)>.01){
       moveCircle(e, e.kx*dt, e.ky*dt);
-      e.kx*=Math.pow(.001,dt); e.ky*=Math.pow(.001,dt);
+      e.kx*=Math.pow(.02,dt); e.ky*=Math.pow(.02,dt);
     }
+    if(e.stagger>0){ continue; }
     const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy);
     const aggro = (e.kind==='guardian'||e.kind==='boss') ? (e.aggroed?99:e.aggro) : e.aggro;
     if(d < aggro && state==='play'){
@@ -1258,6 +1513,7 @@ function render(){
   cx.fillStyle = '#08070a';
   cx.fillRect(0,0,VW,VH);
   if(state==='title'){ drawTitle(); return; }
+  if(state==='shop'){ drawShop(); return; }
 
   const T = theme();
   const camX = isoX(player.x, player.y);
@@ -1355,10 +1611,12 @@ function render(){
     cx.fillRect(0,0,VW,VH);
   }
 
+  drawBlood();
   drawHUD();
   drawTouchUI();
   if(state==='lore' && loreBox) drawLore();
   if(state==='dying') drawDying();
+  if(state==='scare') drawScare();
   if(state==='dead') drawDead();
   if(state==='win') drawWin();
 
@@ -1527,6 +1785,25 @@ function drawDarkness(T){
   }
 }
 
+function drawBlood(){
+  if(bloodT<=0) return;
+  const k = Math.min(1, bloodT/1.2);
+  const g = cx.createRadialGradient(VW/2, VH/2, VH*.28, VW/2, VH/2, VH*.78);
+  g.addColorStop(0, 'rgba(120,0,0,0)');
+  g.addColorStop(.55, `rgba(120,0,0,${.22*k})`);
+  g.addColorStop(1, `rgba(150,6,6,${.72*k})`);
+  cx.fillStyle = g;
+  cx.fillRect(0,0,VW,VH);
+  // flecks clinging to the corners of the lens
+  cx.fillStyle = `rgba(190,20,20,${.8*k})`;
+  for(let i=0;i<18;i++){
+    const ex = (i%2===0) ? (i*13)%70 : VW-((i*17)%70);
+    const ey = (i%3===0) ? (i*23)%54 : VH-((i*29)%54);
+    const w = 1+((i*7)%3);
+    cx.fillRect(ex, ey, w, w);
+  }
+}
+
 // ---------- HUD ----------
 function text(t, x, y, col, size, align){
   cx.font = `${size||8}px monospace`;
@@ -1642,6 +1919,26 @@ function drawDying(){
   cx.fillStyle=`rgba(10,20,8,${Math.min(.5,dyingT*.35)})`; cx.fillRect(0,0,VW,VH);
 }
 
+// Depth I has no boss of its own, so its horror is the Soulless Husk.
+function scareSprite(){
+  if(floorNo>=2) return BOSS;
+  if(floorNo===1) return GUARDIAN;
+  return HUSK;
+}
+function drawScare(){
+  const k = Math.min(1, scareT/.16);
+  cx.fillStyle = scareT<.09 ? '#e8e0d0' : '#0a0006';
+  cx.fillRect(0,0,VW,VH);
+  const img = scareSprite();
+  // fit the whole horror on screen, then lunge closer - fully cropped is just
+  // abstract blocks, and you should be able to see what has come for you
+  const sc = (VH*.92/img.height) * (1 + k*.22);
+  const w = img.width*sc, h = img.height*sc;
+  const jx = (Math.random()-.5)*12, jy = (Math.random()-.5)*12;
+  cx.drawImage(img, VW/2-w/2+jx, VH/2-h/2+jy, w, h);
+  cx.fillStyle = `rgba(150,0,0,${.14+.12*Math.sin(scareT*40)})`;
+  cx.fillRect(0,0,VW,VH);
+}
 function drawDead(){
   cx.fillStyle=`rgba(14,8,6,${Math.min(.88,deadT+.4)})`; cx.fillRect(0,0,VW,VH);
   if(deadT>.3){
@@ -1653,7 +1950,42 @@ function drawDead(){
   if(deadT>1) text(IS_TOUCH?'[ TAP ] return to the Gilded Tankard':'[ SPACE ] return to the Gilded Tankard', VW/2, 180, '#5c5568', 8, 'center');
 }
 
+function drawCoupon(){
+  cx.fillStyle=`rgba(6,5,10,${Math.min(.95,winT*.7)})`; cx.fillRect(0,0,VW,VH);
+  if(winT<=.6) return;
+  text('UNDER ONE MINUTE', VW/2, 12, '#9fff5a', 10, 'center');
+  text('THE FASTEST DESCENT IN THE ISLES', VW/2, 26, '#f4c430', 13, 'center');
+  // the ticket
+  const w=384, h=150, x=VW/2-w/2, y=48;
+  cx.fillStyle='#1a1508'; cx.fillRect(x,y,w,h);
+  cx.strokeStyle='#f4c430'; cx.lineWidth=1;
+  cx.setLineDash([5,4]);
+  cx.strokeRect(x+4.5, y+4.5, w-9, h-9);
+  cx.setLineDash([]);
+  cx.strokeRect(x+.5, y+.5, w-1, h-1);
+  let ty = y+16;
+  text('*  O F F I C I A L   T A V E R N   C O U P O N  *', VW/2, ty, '#caa96e', 9, 'center'); ty+=20;
+  text(`${playerName} cleared the labyrinth in ${fmtMs(finalMs)}.`, VW/2, ty, '#e8e0c8', 9, 'center'); ty+=18;
+  text('THIS COUPON ENTITLES THE BEARER TO COMPEL', VW/2, ty, '#9a8fa8', 8, 'center'); ty+=14;
+  text(shotKing.toUpperCase(), VW/2, ty, '#f4c430', 13, 'center'); ty+=20;
+  text('to submit a video of themselves shotgunning a beer', VW/2, ty, '#e8e0c8', 9, 'center'); ty+=13;
+  text('on camera at the next happy hour.', VW/2, ty, '#e8e0c8', 9, 'center'); ty+=18;
+  text(`NO. ${couponNo}  ·  redeemable at Sackbeard's Tavern  ·  non-negotiable`, VW/2, ty, '#7a7088', 8, 'center');
+  // board beneath
+  const top = lbTop(5);
+  let ly = y+h+14;
+  text('— HALL OF THE LIQUOR KINGS —', VW/2, ly, '#caa96e', 8, 'center'); ly+=13;
+  for(let i=0;i<top.length;i++){
+    const [nm,ms]=top[i], me = nm===playerName;
+    text(`${i+1}. ${nm}`, VW/2-80, ly, me?'#f4c430':'#9a8fa8', 8, 'left');
+    text(fmtMs(ms), VW/2+80, ly, me?'#f4c430':'#9a8fa8', 8, 'right');
+    ly+=10;
+  }
+  if(winT>1.4) text(IS_TOUCH?'[ TAP ] claim it':'[ SPACE ] claim it', VW/2, VH-12, '#5c5568', 8, 'center');
+}
+
 function drawWin(){
+  if(finalMs < 60000){ drawCoupon(); return; }
   cx.fillStyle=`rgba(8,6,14,${Math.min(.9,winT*.6)})`; cx.fillRect(0,0,VW,VH);
   if(winT>.6){
     text('THE VEILRUNNER IS SLAIN', VW/2, 30, '#f4c430', 14, 'center');
@@ -1676,6 +2008,67 @@ function drawWin(){
   }
 }
 
+// ---------- Wagwan's Stank Tank (render + hit-testing) ----------
+const SHOP_CARD = { w:142, h:56, x0:14, y0:96, gapX:8, gapY:10 };
+function shopCardRect(i){
+  const c = i%3, r = (i/3)|0;
+  return { x: SHOP_CARD.x0 + c*(SHOP_CARD.w+SHOP_CARD.gapX),
+           y: SHOP_CARD.y0 + r*(SHOP_CARD.h+SHOP_CARD.gapY),
+           w: SHOP_CARD.w, h: SHOP_CARD.h };
+}
+const SHOP_DEPART = { x:VW/2-52, y:VH-24, w:104, h:16 };
+function shopClick(p){
+  for(let i=0;i<shopStock.length;i++){
+    const r = shopCardRect(i);
+    if(p.x>=r.x && p.x<=r.x+r.w && p.y>=r.y && p.y<=r.y+r.h){ shopSel=i; buyItem(i); return; }
+  }
+  const d = SHOP_DEPART;
+  if(p.x>=d.x && p.x<=d.x+d.w && p.y>=d.y && p.y<=d.y+d.h) closeShop();
+}
+function drawShop(){
+  cx.fillStyle='#120d16'; cx.fillRect(0,0,VW,VH);
+  // lantern glow behind the counter
+  const g = cx.createRadialGradient(VW/2, 40, 8, VW/2, 40, 150);
+  g.addColorStop(0,'rgba(244,196,48,.16)'); g.addColorStop(1,'rgba(244,196,48,0)');
+  cx.fillStyle=g; cx.fillRect(0,0,VW,VH);
+
+  text("WAGWAN'S STANK TANK", VW/2, 8, '#f4c430', 14, 'center');
+  text('no questions asked, no refunds', VW/2, 26, '#7a7088', 8, 'center');
+  text('GOLD ' + player.gold, VW-12, 8, '#f4c430', 10, 'right');
+  text('the hourglass rests here', VW-12, 22, '#5c5568', 8, 'right');
+  cx.drawImage(WAGWAN, 10, 40, WAGWAN.width*2.6, WAGWAN.height*2.6);
+
+  // Wagwan's line: purchase feedback, else his standing patter
+  const line = shopMsgT>0 ? shopMsg : 'Wagwan, yuh king - mind di prices, dem nah move.';
+  text(line, VW/2+22, 74, shopMsgT>0 ? '#9fff5a' : '#c8c0b0', 9, 'center');
+
+  for(let i=0;i<shopStock.length;i++){
+    const it = shopStock[i], T = TIERS[it.tier], r = shopCardRect(i);
+    const afford = player.gold >= T.price && !it.sold;
+    cx.fillStyle = it.sold ? '#15121a' : '#1d1826';
+    cx.fillRect(r.x, r.y, r.w, r.h);
+    cx.strokeStyle = it.sold ? '#2a2430' : (i===shopSel ? '#f4c430' : T.col);
+    cx.lineWidth = 1;
+    cx.strokeRect(r.x+.5, r.y+.5, r.w-1, r.h-1);
+    const dim = it.sold || !afford;
+    text(`${i+1}`, r.x+6, r.y+5, it.sold?'#3a3440':'#5c5568', 8);
+    text(T.label, r.x+r.w-6, r.y+5, it.sold?'#3a3440':T.col, 8, 'right');
+    // name wraps to two lines inside the card
+    const lines = wrapText(it.name, r.w-14, 8).slice(0,2);
+    let ty = r.y+17;
+    for(const ln of lines){ text(ln, r.x+7, ty, it.sold?'#4a4450':'#e8e0c8', 8); ty+=10; }
+    text(it.desc, r.x+7, r.y+39, it.sold?'#3a3440':'#9a8fa8', 8);
+    text(it.sold ? 'SOLD' : `${T.price}g`, r.x+r.w-6, r.y+39,
+      it.sold ? '#5c5568' : (afford ? '#f4c430' : '#8a4a4a'), 9, 'right');
+  }
+
+  const d = SHOP_DEPART;
+  cx.fillStyle='#1d1826'; cx.fillRect(d.x, d.y, d.w, d.h);
+  cx.strokeStyle='#caa96e'; cx.strokeRect(d.x+.5, d.y+.5, d.w-1, d.h-1);
+  text(IS_TOUCH?'DESCEND':'DESCEND  [ENTER]', d.x+d.w/2, d.y+4, '#caa96e', 9, 'center');
+  if(!IS_TOUCH) text('1-6 or click to buy', VW/2, VH-38, '#5c5568', 8, 'center');
+}
+
 // ---------- title ----------
 function drawTitle(){
   cx.fillStyle = '#0a0810'; cx.fillRect(0,0,VW,VH);
@@ -1689,30 +2082,53 @@ function drawTitle(){
   text('beneath the Hoegaarden Library', VW/2, 54, '#7a7088', 8, 'center');
 
   if(titlePhase==='name'){
-    text('Sealed for millennia below the catacombs of Lagendale, the Rotten King stirs.', VW/2, 76, '#c8c0b0', 8, 'center');
-    text('The Guardian’s spell is unraveling. Someone has to go down there.', VW/2, 88, '#c8c0b0', 8, 'center');
-    text('WHO DESCENDS?', VW/2, 116, '#f4c430', 10, 'center');
+    // two tabs: DESCEND (name entry) and RECORDS (the hall)
+    for(let i=0;i<2;i++){
+      const r = tabRect(i), on = (titleTab===i);
+      cx.fillStyle = on ? '#241d33' : '#150f1e';
+      cx.fillRect(r.x, r.y, r.w, r.h);
+      cx.strokeStyle = on ? '#f4c430' : '#3a3350';
+      cx.strokeRect(r.x+.5, r.y+.5, r.w-1, r.h-1);
+      text(i===0?'DESCEND':'RECORDS', r.x+r.w/2, r.y+4, on ? '#f4c430' : '#7a7088', 9, 'center');
+    }
+
+    if(titleTab===1){
+      const top = lbTop(10);
+      text('— HALL OF THE LIQUOR KINGS —', VW/2, 106, '#caa96e', 10, 'center');
+      text('fastest descents on this device', VW/2, 120, '#5c5568', 8, 'center');
+      if(!top.length){
+        text('No one has returned yet.', VW/2, 150, '#7a7088', 9, 'center');
+      } else {
+        let y2 = 138;
+        for(let i=0;i<top.length;i++){
+          const [nm,ms,king]=top[i];
+          const me = nm===playerName;
+          const col = i===0 ? '#f4c430' : (me ? '#9fff5a' : '#c8c0b0');
+          text(`${i+1}.`, VW/2-140, y2, col, 8, 'left');
+          text(nm, VW/2-122, y2, col, 8, 'left');
+          text(king ? king.split(' ')[0] : '—', VW/2+10, y2, '#7a7088', 8, 'left');
+          text(fmtMs(ms), VW/2+140, y2, col, 8, 'right');
+          y2 += 12;
+        }
+      }
+      text(IS_TOUCH?'tap DESCEND to play':'[ TAB ] back to descend', VW/2, VH-20, '#5c5568', 8, 'center');
+      return;
+    }
+
+    text('Sealed for millennia below the catacombs of Lagendale, the Rotten King stirs.', VW/2, 104, '#c8c0b0', 8, 'center');
+    text('The Guardian’s spell is unraveling. Someone has to go down there.', VW/2, 116, '#c8c0b0', 8, 'center');
+    text('WHO DESCENDS?', VW/2, 140, '#f4c430', 10, 'center');
     // name box
-    const w=140, x=VW/2-w/2, y=132;
+    const w=140, x=VW/2-w/2, y=156;
     cx.fillStyle='#181322'; cx.fillRect(x,y,w,16);
     cx.strokeStyle='#caa96e'; cx.strokeRect(x-.5,y-.5,w+1,17);
     const cur = (time*2|0)%2===0 ? '_' : ' ';
     text(playerName + cur, VW/2, y+4, '#e8e0c8', 9, 'center');
     text(IS_TOUCH ? (playerName.trim().length>=2 ? 'press ENTER / done to continue' : 'TAP THE BOX to type your name')
                   : (playerName.trim().length>=2 ? '[ ENTER ] continue' : 'type your name (2-12 letters)'),
-      VW/2, 156, '#5c5568', 8, 'center');
-    // leaderboard preview
-    const top = lbTop(8);
-    if(top.length){
-      text('— HALL OF THE LIQUOR KINGS —', VW/2, 182, '#caa96e', 9, 'center');
-      let y2 = 198;
-      for(let i=0;i<top.length;i++){
-        const [nm,ms]=top[i];
-        text(`${i+1}. ${nm}`, VW/2-80, y2, '#c8c0b0', 8, 'left');
-        text(fmtMs(ms), VW/2+80, y2, '#c8c0b0', 8, 'right');
-        y2 += 11;
-      }
-    }
+      VW/2, 180, '#5c5568', 8, 'center');
+    const best = lbTop(1);
+    if(best.length) text(`best descent: ${best[0][0]} — ${fmtMs(best[0][1])}`, VW/2, 208, '#caa96e', 8, 'center');
     return;
   }
 
@@ -1745,7 +2161,14 @@ function loop(now){
   const dt = Math.min(.05, (now-last)/1000);
   last = now;
   if(innerWidth!==fitW || innerHeight!==fitH) fit();
-  if(state==='dying'){ dyingT += dt; if(dyingT>1.6){ state='dead'; deadT=0; } }
+  if(state==='dying'){
+    dyingT += dt;
+    if(dyingT>1.6){
+      if(scarePending){ scarePending=false; scareT=0; state='scare'; SFX.scare(); shake=.9; }
+      else { state='dead'; deadT=0; }
+    }
+  }
+  if(state==='scare'){ scareT += dt; if(scareT>.65){ state='dead'; deadT=0; } }
   if(state==='dead') deadT += dt;
   if(state==='win') winT += dt;
   update(dt);
@@ -1768,6 +2191,14 @@ window.__game = {
   get runMs(){return runMs;}, set runMs(v){runMs=v;},
   get shotKing(){return shotKing;},
   get cumsock(){return cumsock;},
+  get shopStock(){return shopStock;}, get shopVisits(){return shopVisits;},
+  openShop, closeShop, buyItem, rollStock, SHOP_ITEMS, TIERS,
+  get bloodT(){return bloodT;},
+  get titleTab(){return titleTab;}, setTitleTab,
+  get couponNo(){return couponNo;},
+  get scarePending(){return scarePending;}, set scarePending(v){scarePending=v;},
+  scareSprite, lbRecord,
+  get sprites(){return {HUSK, GUARDIAN, BOSS, WAGWAN};},
   get aleGot(){return aleGot;}, get booksGot(){return booksGot;},
   set loreBox(l){loreBox=l;},
   set kingSel(i){kingSel=i;},
