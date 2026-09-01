@@ -622,7 +622,11 @@ function rollStock(){
     const commons = SHOP_ITEMS.filter(it=>it.tier==='common' && !itemOwned(it) && !picked.includes(it));
     if(commons.length) picked[picked.length-1] = commons[(Math.random()*commons.length)|0];
   }
-  return picked;
+  // Hand out copies, never the definitions. buyItem() marks `sold` on what it
+  // is given, and marking the shared definition would keep an item sold out for
+  // every later visit and every later run. apply() works on the player global
+  // rather than `this`, so a shallow copy behaves identically.
+  return picked.map(it=>Object.assign({}, it));
 }
 
 // ---------- lore books ----------
@@ -923,7 +927,8 @@ function startGame(){
   player.regen = false; player.regenT = 0; player.bell = false; player.rotHeals = false;
   player.netherKey = false; player.netherUsed = false; player.gildedTankard = false;
   player.blackFlag = 0;
-  shopStock = []; shopMsg = ''; shopMsgT = 0;
+  shopStock = []; shopMsg = ''; shopMsgT = 0; shopVisits = 0; shopSel = 0;
+  SHOP_ITEMS.forEach(it=>{ delete it.sold; });   // nothing carries over between runs
   loreDeck = rngShuffle(LORE.slice());
   relicDeck = rngShuffle(RELICS.slice());
   runMs = 0; finalMs = 0; lbImproved = false; scarePending = false; scareT = 0;
@@ -1036,7 +1041,7 @@ function onPress(k){
     if(k==='arrowleft'||k==='a') { kingSel=(kingSel+5)%6; tone(330,.05,'square',.04); }
     else if(k==='arrowright'||k==='d') { kingSel=(kingSel+1)%6; tone(330,.05,'square',.04); }
     else if(k==='escape'||k==='backspace'){ titlePhase='name'; showNameInput(); }
-    else if(k==='enter'||k===' '||k==='mouse') startGame();
+    else if(k==='p') startGame();   // not space/click - those are attack inputs
     return;
   }
   if(state==='lore'){ if(k==='enter'||k===' '||k==='e'||k==='mouse'){ state='play'; loreBox=null; } return; }
@@ -1044,12 +1049,12 @@ function onPress(k){
     if(k>='1'&&k<='6') buyItem(parseInt(k,10)-1);
     else if(k==='arrowleft'||k==='a') shopSel=(shopSel+5)%6;
     else if(k==='arrowright'||k==='d') shopSel=(shopSel+1)%6;
-    else if(k===' ') buyItem(shopSel);
+    else if(k==='b') buyItem(shopSel);
     else if(k==='enter'||k==='escape') closeShop();
     return;
   }
   if(state==='dead'||state==='win'){
-    if(deadT>1||winT>1){ if(k==='enter'||k===' '||k==='mouse'){ state='title'; titlePhase='king'; titleTab=0; } }
+    if(deadT>1||winT>1){ if(k==='p'){ state='title'; titlePhase='king'; titleTab=0; } }
     return;
   }
   if(state==='play'){
@@ -1079,18 +1084,29 @@ cv.addEventListener('pointerdown', e=>{
   }
   if(state==='shop'){ shopClick(p); return; }
   if(!IS_TOUCH){
-    // desktop mouse: title hit-test kings, otherwise generic press
-    if(state==='title' && titlePhase==='king' && titleKingHit(p)>=0){ kingSel=titleKingHit(p); tone(330,.05,'square',.04); return; }
+    if(state==='title' && titlePhase==='king'){
+      if(titleKingHit(p)>=0){ kingSel=titleKingHit(p); tone(330,.05,'square',.04); return; }
+      if(inRect(p, BTN_DESCEND)) startGame();
+      return;
+    }
+    if(state==='dead'||state==='win'){
+      if((deadT>1||winT>1) && inRect(p, BTN_MENU)){ state='title'; titlePhase='king'; titleTab=0; }
+      return;
+    }
     onPress('mouse'); return;
   }
   // touch devices
   if(state==='title'){
     const hit = titleKingHit(p);
     if(hit>=0){ kingSel=hit; tone(330,.05,'square',.04); return; }
-    if(p.y>256){ startGame(); return; }
+    if(titlePhase==='king' && inRect(p, BTN_DESCEND)) startGame();
     return;
   }
   if(state==='shop'){ shopClick(p); return; }
+  if(state==='dead'||state==='win'){
+    if((deadT>1||winT>1) && inRect(p, BTN_MENU)){ state='title'; titlePhase='king'; titleTab=0; }
+    return;
+  }
   if(state!=='play'){ onPress('mouse'); return; }
   if(Math.hypot(p.x-BTN_ATK.x,p.y-BTN_ATK.y)<BTN_ATK.r+8){ touch.btns[e.pointerId]='atk'; tryAttack(); return; }
   if(player.blickyAmmo>0 && Math.hypot(p.x-BTN_GUN.x,p.y-BTN_GUN.y)<BTN_GUN.r+8){ touch.btns[e.pointerId]='gun'; tryBlicky(); return; }
@@ -2029,7 +2045,10 @@ function drawDead(){
     text('The soulless cannot die. But they are not alive.', VW/2, 138, '#b8a8a0', 8, 'center');
     text(`${player.king.name} — ${player.kills} slain · ${player.gold} gold · depth ${floorNo+1} · ${fmtMs(runMs)}`, VW/2, 154, '#9a8fa8', 8, 'center');
   }
-  if(deadT>1) text(IS_TOUCH?'[ TAP ] return to the Gilded Tankard':'[ SPACE ] return to the Gilded Tankard', VW/2, 180, '#5c5568', 8, 'center');
+  if(deadT>1){
+    text('return to the Gilded Tankard', VW/2, 180, '#5c5568', 8, 'center');
+    drawBtn(BTN_MENU, IS_TOUCH?'MAIN MENU':'[ P ]  MAIN MENU', '#caa96e');
+  }
 }
 
 function drawCoupon(){
@@ -2063,7 +2082,7 @@ function drawCoupon(){
     text(fmtMs(ms), VW/2+80, ly, me?'#f4c430':'#9a8fa8', 8, 'right');
     ly+=10;
   }
-  if(winT>1.4) text(IS_TOUCH?'[ TAP ] claim it':'[ SPACE ] claim it', VW/2, VH-12, '#5c5568', 8, 'center');
+  if(winT>1.4) drawBtn(BTN_MENU, IS_TOUCH?'CLAIM IT':'[ P ]  CLAIM IT', '#f4c430');
 }
 
 function drawWin(){
@@ -2086,7 +2105,7 @@ function drawWin(){
       text(fmtMs(ms), VW/2+90, y, me?'#f4c430':'#c8c0b0', 8, 'right');
       y += 11;
     }
-    if(winT>1.4) text(IS_TOUCH?'[ TAP ] drink to it':'[ SPACE ] drink to it', VW/2, y+10, '#5c5568', 8, 'center');
+    if(winT>1.4) drawBtn(BTN_MENU, IS_TOUCH?'DRINK TO IT':'[ P ]  DRINK TO IT', '#caa96e');
   }
 }
 
@@ -2099,6 +2118,16 @@ function shopCardRect(i){
            w: SHOP_CARD.w, h: SHOP_CARD.h };
 }
 const SHOP_DEPART = { x:VW/2-52, y:VH-24, w:104, h:16 };
+// The only places a tap may start or end a run.
+const BTN_DESCEND = { x:VW/2-62, y:258, w:124, h:18 };
+const BTN_MENU    = { x:VW/2-66, y:VH-26, w:132, h:18 };
+function inRect(p, r){ return p.x>=r.x && p.x<=r.x+r.w && p.y>=r.y && p.y<=r.y+r.h; }
+function drawBtn(r, label, col){
+  cx.fillStyle = '#1d1826'; cx.fillRect(r.x, r.y, r.w, r.h);
+  cx.strokeStyle = col; cx.lineWidth = 1;
+  cx.strokeRect(r.x+.5, r.y+.5, r.w-1, r.h-1);
+  text(label, r.x+r.w/2, r.y+5, col, 9, 'center');
+}
 function shopClick(p){
   for(let i=0;i<shopStock.length;i++){
     const r = shopCardRect(i);
@@ -2148,7 +2177,7 @@ function drawShop(){
   cx.fillStyle='#1d1826'; cx.fillRect(d.x, d.y, d.w, d.h);
   cx.strokeStyle='#caa96e'; cx.strokeRect(d.x+.5, d.y+.5, d.w-1, d.h-1);
   text(IS_TOUCH?'DESCEND':'DESCEND  [ENTER]', d.x+d.w/2, d.y+4, '#caa96e', 9, 'center');
-  if(!IS_TOUCH) text('1-6 or click to buy', VW/2, VH-38, '#5c5568', 8, 'center');
+  if(!IS_TOUCH) text('1-6 or click to buy · B buys the highlighted slot', VW/2, VH-38, '#5c5568', 8, 'center');
 }
 
 // ---------- title ----------
@@ -2216,6 +2245,7 @@ function drawTitle(){
 
   // king select phase
   text(`descending: ${playerName}`, VW/2, 74, '#7a7088', 8, 'center');
+  text(IS_TOUCH ? 'tap a king below' : '◀ ▶ or click to choose your Liquor King', VW/2, 96, '#5c5568', 8, 'center');
   const x0 = VW/2 - KING_SPACING*2.5;
   for(let i=0;i<6;i++){
     const k = KINGS[i], x = x0+i*KING_SPACING, y = KING_Y;
@@ -2233,8 +2263,8 @@ function drawTitle(){
   text(k.perk, VW/2, 230, '#c8c0b0', 8, 'center');
   const spdW = k.spd>4.8?'fast':k.spd<4?'slow':'avg';
   text(`HP ${k.hp}   DMG ${k.dmg}   SPD ${spdW}   SWING ${k.cd<.3?'quick':k.cd>.5?'heavy':'avg'}   SIGHT ${k.light>6?'far':'avg'}`, VW/2, 244, '#7ec850', 8, 'center');
-  text(IS_TOUCH ? 'tap a king · tap here to DESCEND' : '◀ ▶ choose your Liquor King · ENTER descend', VW/2, 266, '#f4c430', 9, 'center');
-  if(!IS_TOUCH) text('WASD/arrows move · SPACE attack · K blicky · M mute · N music', VW/2, 282, '#413b4d', 8, 'center');
+  drawBtn(BTN_DESCEND, IS_TOUCH?'TAP TO DESCEND':'[ P ]  DESCEND', '#f4c430');
+  if(!IS_TOUCH) text('WASD move · SPACE attack · K blicky · P start/exit · M mute · N music', VW/2, 282, '#413b4d', 8, 'center');
 }
 
 // ---------- main loop ----------
@@ -2277,12 +2307,13 @@ window.__game = {
   get shotKing(){return shotKing;},
   get cumsock(){return cumsock;},
   get shopStock(){return shopStock;}, get shopVisits(){return shopVisits;},
+  get shopSel(){return shopSel;}, set shopSel(v){shopSel=v;},
   openShop, closeShop, buyItem, rollStock, SHOP_ITEMS, TIERS,
   get bloodT(){return bloodT;},
   get titleTab(){return titleTab;}, setTitleTab,
   get couponNo(){return couponNo;},
   get scarePending(){return scarePending;}, set scarePending(v){scarePending=v;},
-  scareSprite, lbRecord, music, musicMood,
+  scareSprite, lbRecord, music, musicMood, BTN_DESCEND, BTN_MENU,
   get muted(){return muted;}, set muted(v){muted=v;},
   get sprites(){return {HUSK, GUARDIAN, BOSS, WAGWAN};},
   get aleGot(){return aleGot;}, get booksGot(){return booksGot;},

@@ -52,7 +52,8 @@ Between depths you surface into **Wagwan's Stank Tank**, where Wagwan himself
 lays six items on the counter. Which items appear is luck; the prices never
 move — **common 10g, rare 22g, epic 38g, legendary 60g**. There is always at
 least one common on the counter, so you can afford something on your first
-visit. Legendaries are a windfall you'll rarely see: the Glyph of Purity made
+visit. The stall is restocked from scratch every visit and every run — nothing
+stays sold out, and a Pint bought on Depth I can be bought again on Depth II. Legendaries are a windfall you'll rarely see: the Glyph of Purity made
 whole, Jagerbauhm's Nether Key, the Gilded Tankard, Sackbeard's Black Flag, or
 the Crown of the Rotted Soul.
 
@@ -83,13 +84,21 @@ the Oracle**, the **Hollow Urn**, the **Fortunate Scarab**, and the
 | --- | --- |
 | WASD / Arrow keys | Move |
 | Space / J / Click | Attack |
+| **P** | **Start a run, and leave the win/death screen** |
 | K | Fire the Blicky (if found) |
 | L | Turn the Nether Key (if bought) |
 | 1–6 / click | Buy in the Stank Tank |
+| B | Buy the highlighted slot |
+| Enter | Confirm your name; depart the Stank Tank |
 | Tab | Switch between DESCEND and RECORDS |
 | M | Mute everything |
 | N | Music on/off (keeps sound effects) |
 | Touch devices | Virtual joystick (left) + ATK/GUN buttons (right) |
+
+Starting and ending a run is deliberately **not** bound to space or click —
+those are attack inputs, and spamming them shouldn't throw you into a fresh
+run the moment you die. On phones the same job is done by the on-screen
+**DESCEND** and **MAIN MENU** buttons, which only respond to taps inside them.
 
 ## Music
 
