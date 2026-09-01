@@ -52,7 +52,11 @@ const CXO = VW/2, CYO = VH/2 - 10;
 
 // ---------- tiny audio ----------
 let AC = null, muted = false;
-function ac(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function ac(){
+  if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC && AC.state==='suspended'){ try{ AC.resume(); }catch(e){} }
+  return AC;
+}
 function tone(f, dur, type, vol, slide){
   if(muted) return; const a = ac(); if(!a) return;
   const o = a.createOscillator(), g = a.createGain();
@@ -90,6 +94,77 @@ const SFX = {
   bonk(){ tone(180,.08,'square',.09,-60); },
   win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.25,'square',.08),i*140)); }
 };
+
+// ---------- music ----------
+// An original 8-bit dirge written for this game: D minor, four bars, walking
+// down Dm - Bb - F - A. Synthesised from oscillators, so there is no sample to
+// license and nothing to download.
+function nf(m){ return 440 * Math.pow(2,(m-69)/12); }   // MIDI note -> Hz
+const MUS_STEPS = 32;
+const MUS_BASS = (()=>{ const a = Array(MUS_STEPS).fill(null);
+  a[0]=38; a[4]=38; a[8]=34; a[12]=34; a[16]=41; a[20]=41; a[24]=33; a[28]=33; return a; })();
+const MUS_ARP = [
+  62,65,69,65, 62,65,69,72,
+  58,62,65,62, 58,62,65,69,
+  65,69,72,69, 65,69,72,76,
+  69,73,76,73, 69,73,76,81,
+];
+const MUS_LEAD = (()=>{ const a = Array(MUS_STEPS).fill(null);
+  a[0]=74; a[6]=72; a[8]=70; a[14]=69; a[16]=77; a[22]=76; a[24]=74; a[30]=73; return a; })();
+
+const MOODS = {
+  title: { dur:.20, trans:0,  lead:false, gain:.9,  drone:false },
+  shop:  { dur:.19, trans:3,  lead:false, gain:.8,  drone:false },
+  d1:    { dur:.17, trans:0,  lead:true,  gain:1,   drone:false },
+  d2:    { dur:.16, trans:-2, lead:true,  gain:1,   drone:false },
+  d3:    { dur:.13, trans:-5, lead:true,  gain:1.1, drone:true  },
+};
+const music = {
+  on:true, mood:'title', step:0, next:0,
+  voice(freq, t, dur, type, vol){
+    const a = AC; if(!a) return;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t+.012);
+    g.gain.exponentialRampToValueAtTime(.0001, t+dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t); o.stop(t+dur+.02);
+  },
+  playStep(i, t){
+    const M = MOODS[this.mood]; if(!M) return;
+    const tr = M.trans, gv = M.gain;
+    const b = MUS_BASS[i];
+    if(b!==null) this.voice(nf(b+tr), t, M.dur*2.1, 'triangle', .085*gv);
+    const ar = MUS_ARP[i];
+    if(ar!==null && i%2===0) this.voice(nf(ar+tr), t, M.dur*.85, 'square', .020*gv);
+    if(M.lead){
+      const l = MUS_LEAD[i];
+      if(l!==null) this.voice(nf(l+tr), t, M.dur*3.2, 'triangle', .030*gv);
+    }
+    if(M.drone && i===0) this.voice(nf(26+tr), t, M.dur*MUS_STEPS*.55, 'sawtooth', .028*gv);
+  },
+  update(){
+    const a = AC;
+    if(!a || muted || !this.on || this.mood==='silent' || a.state!=='running'){ this.next = 0; return; }
+    const M = MOODS[this.mood]; if(!M){ this.next = 0; return; }
+    if(!this.next) this.next = a.currentTime + .06;
+    // schedule a little ahead of the clock so playback never stutters
+    let guard = 0;
+    while(this.next < a.currentTime + .25 && guard++ < 64){
+      this.playStep(this.step, this.next);
+      this.next += M.dur;
+      this.step = (this.step+1) % MUS_STEPS;
+    }
+  }
+};
+function musicMood(){
+  if(state==='scare' || state==='dying' || state==='dead' || state==='win') return 'silent';
+  if(state==='title') return 'title';
+  if(state==='shop') return 'shop';
+  if(state==='lore') return 'd'+(floorNo+1);
+  return 'd' + Math.min(3, (floorNo|0)+1);
+}
 
 // ---------- sprites (pixel maps) ----------
 function bake(rows, pal, scale){
@@ -462,10 +537,10 @@ const RELICS = [
 // ---------- Wagwan's Stank Tank ----------
 // Fixed prices per tier; only which items appear is random.
 const TIERS = {
-  common:    { price:15, weight:55, col:'#c8c0b0', label:'COMMON' },
-  rare:      { price:30, weight:30, col:'#6ec8ff', label:'RARE' },
-  epic:      { price:50, weight:12, col:'#c07aff', label:'EPIC' },
-  legendary: { price:80, weight:3,  col:'#f4c430', label:'LEGENDARY' },
+  common:    { price:10, weight:55, col:'#c8c0b0', label:'COMMON' },
+  rare:      { price:22, weight:30, col:'#6ec8ff', label:'RARE' },
+  epic:      { price:38, weight:12, col:'#c07aff', label:'EPIC' },
+  legendary: { price:60, weight:3,  col:'#f4c430', label:'LEGENDARY' },
 };
 // apply() mutates the player; `once` items are excluded once owned.
 const SHOP_ITEMS = [
@@ -541,6 +616,12 @@ function rollStock(){
     picked.push(choice);
     pool.splice(pool.indexOf(choice),1);
   }
+  // Guarantee a common on the counter. Six straight non-commons is rare (~1 in
+  // 120) but it would leave a broke player with nothing to buy at all.
+  if(picked.length && !picked.some(it=>it.tier==='common')){
+    const commons = SHOP_ITEMS.filter(it=>it.tier==='common' && !itemOwned(it) && !picked.includes(it));
+    if(commons.length) picked[picked.length-1] = commons[(Math.random()*commons.length)|0];
+  }
   return picked;
 }
 
@@ -580,7 +661,7 @@ const THEMES = {
 };
 const FLOORS = [
   { name:'DEPTH I — THE LAGENDALE CATACOMBS', size:25, theme:THEMES.catacombs,
-    husks:8, wisps:4, betrayed:0, skinless:0, ale:3, gold:10, rot:5, books:2, armorIdx:0 },
+    husks:8, wisps:4, betrayed:0, skinless:0, ale:3, gold:13, rot:5, books:2, armorIdx:0 },
   { name:'DEPTH II — THE RIVER COFFIN', size:29, theme:THEMES.rivercoffin,
     husks:8, wisps:5, betrayed:5, skinless:0, ale:3, gold:12, rot:8, books:3, guardian:true },
   { name:'DEPTH III — SEPULCHER OF THE ROTTEN KING', size:27, theme:THEMES.sepulcher,
@@ -943,6 +1024,7 @@ addEventListener('keydown', e=>{
   }
   keys[e.key.toLowerCase()] = true;
   if(e.key.toLowerCase()==='m'){ muted=!muted; }
+  if(e.key.toLowerCase()==='n'){ music.on=!music.on; music.next=0; }
   onPress(e.key.toLowerCase());
 });
 addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
@@ -1867,7 +1949,7 @@ function drawHUD(){
     cx.fillStyle='#2a3a44'; cx.fillRect(x, y, w, 6);
     cx.fillStyle=col; cx.fillRect(x, y, w*Math.max(0,big.hp)/big.maxhp, 6);
   } else if(state==='play' && !IS_TOUCH){
-    text('WASD move · SPACE attack · K blicky · M mute', VW/2, VH-12, '#5c5568', 8, 'center');
+    text('WASD move · SPACE attack · K blicky · M mute · N music', VW/2, VH-12, '#5c5568', 8, 'center');
   }
 }
 
@@ -2152,7 +2234,7 @@ function drawTitle(){
   const spdW = k.spd>4.8?'fast':k.spd<4?'slow':'avg';
   text(`HP ${k.hp}   DMG ${k.dmg}   SPD ${spdW}   SWING ${k.cd<.3?'quick':k.cd>.5?'heavy':'avg'}   SIGHT ${k.light>6?'far':'avg'}`, VW/2, 244, '#7ec850', 8, 'center');
   text(IS_TOUCH ? 'tap a king · tap here to DESCEND' : '◀ ▶ choose your Liquor King · ENTER descend', VW/2, 266, '#f4c430', 9, 'center');
-  if(!IS_TOUCH) text('WASD/arrows move · SPACE attack · K blicky · M mute', VW/2, 282, '#413b4d', 8, 'center');
+  if(!IS_TOUCH) text('WASD/arrows move · SPACE attack · K blicky · M mute · N music', VW/2, 282, '#413b4d', 8, 'center');
 }
 
 // ---------- main loop ----------
@@ -2160,6 +2242,9 @@ let last = performance.now();
 function loop(now){
   const dt = Math.min(.05, (now-last)/1000);
   last = now;
+  const mm = musicMood();
+  if(mm !== music.mood){ music.mood = mm; music.next = 0; if(mm!=='silent') music.step = 0; }
+  music.update();
   if(innerWidth!==fitW || innerHeight!==fitH) fit();
   if(state==='dying'){
     dyingT += dt;
@@ -2197,7 +2282,8 @@ window.__game = {
   get titleTab(){return titleTab;}, setTitleTab,
   get couponNo(){return couponNo;},
   get scarePending(){return scarePending;}, set scarePending(v){scarePending=v;},
-  scareSprite, lbRecord,
+  scareSprite, lbRecord, music, musicMood,
+  get muted(){return muted;}, set muted(v){muted=v;},
   get sprites(){return {HUSK, GUARDIAN, BOSS, WAGWAN};},
   get aleGot(){return aleGot;}, get booksGot(){return booksGot;},
   set loreBox(l){loreBox=l;},

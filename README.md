@@ -50,10 +50,11 @@ the last word.
 
 Between depths you surface into **Wagwan's Stank Tank**, where Wagwan himself
 lays six items on the counter. Which items appear is luck; the prices never
-move — **common 15g, rare 30g, epic 50g, legendary 80g**. Legendaries are a
-windfall you'll rarely see: the Glyph of Purity made whole, Jagerbauhm's
-Nether Key, the Gilded Tankard, Sackbeard's Black Flag, or the Crown of the
-Rotted Soul.
+move — **common 10g, rare 22g, epic 38g, legendary 60g**. There is always at
+least one common on the counter, so you can afford something on your first
+visit. Legendaries are a windfall you'll rarely see: the Glyph of Purity made
+whole, Jagerbauhm's Nether Key, the Gilded Tankard, Sackbeard's Black Flag, or
+the Crown of the Rotted Soul.
 
 **The run timer stops while you shop**, so browsing never costs you a record.
 
@@ -86,13 +87,23 @@ the Oracle**, the **Hollow Urn**, the **Fortunate Scarab**, and the
 | L | Turn the Nether Key (if bought) |
 | 1–6 / click | Buy in the Stank Tank |
 | Tab | Switch between DESCEND and RECORDS |
-| M | Mute |
+| M | Mute everything |
+| N | Music on/off (keeps sound effects) |
 | Touch devices | Virtual joystick (left) + ATK/GUN buttons (right) |
+
+## Music
+
+The soundtrack is an original 8-bit dirge written for this game — D minor,
+four bars walking down Dm–Bb–F–A — synthesised live from oscillators rather
+than played from a file. It shifts with the descent: slower and sparser on the
+title screen, warmer in the Stank Tank, a whole step down in the River Coffin,
+and faster and five semitones lower under a sawtooth drone in the Sepulcher.
+It cuts out entirely when you die. No samples, nothing to license.
 
 ## Tech
 
 Vanilla JavaScript on a single 480×300 canvas, upscaled with pixelated
 rendering. Procedurally generated mazes (recursive backtracker), painter's
 algorithm isometric renderer with cutaway walls, code-drawn pixel sprites,
-per-depth palettes, WebAudio bleeps, localStorage leaderboard. No assets,
-no libraries.
+per-depth palettes, a WebAudio chiptune engine and sound effects, localStorage
+leaderboard. No assets, no libraries.
